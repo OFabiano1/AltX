@@ -1,4 +1,7 @@
 import asyncio
+import io
+import logging
+import os
 import random
 from datetime import datetime, timezone
 
@@ -8,6 +11,9 @@ from discord.ext import commands
 
 import visual
 import data
+import caixa_card
+
+log = logging.getLogger("alt.economia")
 
 # ─── ganhos ───
 DAILY_DIAMANTES = 100
@@ -18,6 +24,13 @@ MSG_DIMA_MIN = 5
 MSG_DIMA_MAX = 15
 
 ROLL_CUSTO = 5  # ametista por giro
+
+# banner da loja. padrao embutido, mas link de cdn expira:
+# quando cair, bota o link novo no env que ele prevalece.
+LOJA_BANNER_URL = os.getenv(
+    "LOJA_BANNER_URL",
+    "https://cdn.discordapp.com/attachments/1017344173843693628/1559204744256294932/image.png?ex=6ace3a13&is=6acce893&hm=5dd8661e05ae3737d4754eb4e73ab16dd9b12e337f7ba6808785d9da5860b046&",
+)
 
 # ─── auras (id -> nome, preço em ametista, descrição) ───
 AURAS = {
@@ -58,8 +71,8 @@ ALIAS_AXOLOTL = {"glitch": "bugado"}
 
 # ─── loja de doces (id -> nome, preço em doces, descrição) ───
 DOCES_LOJA = {
-    "ametista1": {"nome": "1 ametista",       "preco": 20,  "desc": "troca doces por ametista"},
-    "dima50":    {"nome": "50 diamantes",     "preco": 30,  "desc": "troca doces por diamantes"},
+    "ametista1": {"nome": "1 ametista",       "preco": 20,  "desc": "doces derretidos viram ametista"},
+    "dima50":    {"nome": "50 diamantes",     "preco": 30,  "desc": "pescados no fundo do lago"},
     "bruxinho":  {"nome": "axolotl bruxinho", "preco": 300, "desc": "exclusivo de halloween, lendário"},
     "demonio":   {"nome": "axolotl demônio",  "preco": 666, "desc": "o preço do lago, lendário"},
 }
@@ -156,13 +169,52 @@ async def _pagar_e_sortear(user_id: int, rara: bool) -> list[str] | None:
     return itens
 
 
-async def _animar_caixa(edit, titulo: str, itens: list[str], view: discord.ui.View | None):
-    """revela os 3 um por vez (~1s cada). `edit` recebe embed/view."""
+async def _animar_caixa(
+    edit,
+    titulo: str,
+    itens: list[str],
+    view: discord.ui.View | None,
+    final: discord.Embed | None = None,
+    arquivo: discord.File | None = None,
+):
+    """revela os 3 um por vez (~1s cada). `edit` recebe embed/view.
+
+    `final` e o embed pronto (com card anexado ou nao). sem ele,
+    monta o padrao. sem card, o texto segue sozinho.
+    """
     await asyncio.sleep(0.9)
     for n in (1, 2):
         await edit(embed=Economia._embed_parcial(titulo, itens, n))
         await asyncio.sleep(0.9)
-    await edit(embed=Economia._embed_caixa(titulo, itens), view=view)
+    if final is None:
+        final = Economia._embed_caixa(titulo, itens)
+    if arquivo is not None:
+        await edit(embed=final, view=view, attachments=[arquivo])
+    else:
+        await edit(embed=final, view=view)
+
+
+async def _card_caixa(user_id: int, titulo: str, itens: list[str]) -> tuple[discord.File | None, discord.Embed]:
+    """card png da abertura + embed final. sem card, embed sem imagem."""
+    final = Economia._embed_caixa(titulo, itens)
+    try:
+        colecao = await asyncio.to_thread(data.buscar_colecao, user_id)
+        qtds: dict[str, int] = {}
+        for aid, qtd in colecao:
+            qtds[ALIAS_AXOLOTL.get(aid, aid)] = qtd
+        linhas = []
+        for aid in itens:
+            info = AXOLOTLS.get(aid, {"nome": aid, "rar": "?"})
+            linhas.append((info["nome"], info["rar"], qtds.get(aid, 1)))
+        png = await asyncio.wait_for(
+            asyncio.to_thread(caixa_card.render_caixa, titulo, linhas), timeout=10
+        )
+        arquivo = discord.File(io.BytesIO(png), filename="caixa.png")
+        final.set_image(url="attachment://caixa.png")
+        return arquivo, final
+    except Exception:
+        log.exception("caixa: card falhou, vai so texto")
+        return None, final
 
 
 class CaixaView(discord.ui.View):
@@ -191,10 +243,13 @@ class CaixaView(discord.ui.View):
         moeda = visual.AMETHYST if self.rara else visual.DIAMANTE
         nome = "caixa rara" if self.rara else "caixa"
         titulo = f"{moeda} você abriu outra {nome}!"
+        arquivo, final = await _card_caixa(self.dono_id, titulo, itens)
         await interaction.response.send_message(
             embed=Economia._embed_parcial(titulo, itens, 0)
         )
-        await _animar_caixa(interaction.edit_original_response, titulo, itens, self)
+        await _animar_caixa(
+            interaction.edit_original_response, titulo, itens, self, final, arquivo
+        )
 
 
 class Economia(commands.Cog, name="Economia"):
@@ -344,9 +399,11 @@ class Economia(commands.Cog, name="Economia"):
             )
         embed = discord.Embed(
             title=f"{visual.AXOLOTL} loja do lago",
-            description="\n\n".join(linhas),
+            description="tudo que o lago tem pra vender hoje.\n\n" + "\n\n".join(linhas),
             color=visual.PRIMARY,
         )
+        if LOJA_BANNER_URL:
+            embed.set_image(url=LOJA_BANNER_URL)
         embed.add_field(
             name=f"{visual.AXOLOTL} giro de axolotl",
             value=f"`>roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 axolotl.",
@@ -375,7 +432,7 @@ class Economia(commands.Cog, name="Economia"):
             value=f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST} • **{doces}** 🍬",
             inline=False,
         )
-        embed.set_footer(text=f">buy <id> compra • >aura <id> equipa • {visual.FOOTER}")
+        embed.set_footer(text=f">buy <id> compra • >caixa abre • >aura <id> equipa • {visual.FOOTER}")
         await ctx.send(embed=embed)
 
     # ─── >buy ───
@@ -566,8 +623,11 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.DIAMANTE} {ctx.author.display_name} abriu a caixa!"
+        arquivo, final = await _card_caixa(ctx.author.id, titulo, itens)
         msg = await ctx.send(embed=self._embed_parcial(titulo, itens, 0))
-        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, False))
+        await _animar_caixa(
+            msg.edit, titulo, itens, CaixaView(ctx.author.id, False), final, arquivo
+        )
 
     @app_commands.command(name="caixa", description="abre a caixa comum: 150 diamantes = 3 axolotls.")
     async def caixa_slash(self, interaction: discord.Interaction):
@@ -580,9 +640,15 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.DIAMANTE} você abriu a caixa!"
+        arquivo, final = await _card_caixa(interaction.user.id, titulo, itens)
         await interaction.response.send_message(embed=self._embed_parcial(titulo, itens, 0))
         await _animar_caixa(
-            interaction.edit_original_response, titulo, itens, CaixaView(interaction.user.id, False)
+            interaction.edit_original_response,
+            titulo,
+            itens,
+            CaixaView(interaction.user.id, False),
+            final,
+            arquivo,
         )
 
     # ─── >caixarara ───
@@ -598,8 +664,11 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.AMETHYST} {ctx.author.display_name} abriu a caixa rara!"
+        arquivo, final = await _card_caixa(ctx.author.id, titulo, itens)
         msg = await ctx.send(embed=self._embed_parcial(titulo, itens, 0))
-        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, True))
+        await _animar_caixa(
+            msg.edit, titulo, itens, CaixaView(ctx.author.id, True), final, arquivo
+        )
 
     @app_commands.command(name="caixarara", description="abre a caixa rara: 15 ametista = 3 axolotls raros.")
     async def caixarara_slash(self, interaction: discord.Interaction):
@@ -612,9 +681,15 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.AMETHYST} você abriu a caixa rara!"
+        arquivo, final = await _card_caixa(interaction.user.id, titulo, itens)
         await interaction.response.send_message(embed=self._embed_parcial(titulo, itens, 0))
         await _animar_caixa(
-            interaction.edit_original_response, titulo, itens, CaixaView(interaction.user.id, True)
+            interaction.edit_original_response,
+            titulo,
+            itens,
+            CaixaView(interaction.user.id, True),
+            final,
+            arquivo,
         )
 
     # ─── >colecao ───
@@ -751,9 +826,11 @@ class Economia(commands.Cog, name="Economia"):
             )
         embed = discord.Embed(
             title=f"{visual.AXOLOTL} loja do lago",
-            description="\n\n".join(linhas),
+            description="tudo que o lago tem pra vender hoje.\n\n" + "\n\n".join(linhas),
             color=visual.PRIMARY,
         )
+        if LOJA_BANNER_URL:
+            embed.set_image(url=LOJA_BANNER_URL)
         embed.add_field(
             name=f"{visual.AXOLOTL} giro de axolotl",
             value=f"`/roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 axolotl.",
@@ -782,7 +859,7 @@ class Economia(commands.Cog, name="Economia"):
             value=f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST} • **{doces}** 🍬",
             inline=False,
         )
-        embed.set_footer(text=f"/buy compra • /aura equipa • {visual.FOOTER}")
+        embed.set_footer(text=f"/buy compra • /caixa abre • /aura equipa • {visual.FOOTER}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ─── /buy ───
