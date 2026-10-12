@@ -18,7 +18,8 @@ log = logging.getLogger("alt.voz")
 # de onde o app foi aberto.
 AUDIO_OI = Path(__file__).parent.parent / "kkkiaimen.mp3"
 
-# um oi a cada 30s por servidor: sem isso entra-e-sai vira spam.
+# um oi a cada 30s por pessoa: sem isso entra-e-sai vira spam,
+# mas uma pessoa nao rouba o oi da outra.
 OI_COOLDOWN = 30
 
 # a voz do host vive quebrada: o disconnect do discord.py espera
@@ -84,7 +85,8 @@ class Voz(commands.Cog, name="Voz"):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._ultimo_oi: dict[int, float] = {}
+        # chave (servidor, pessoa): cooldown individual.
+        self._ultimo_oi: dict[tuple[int, int], float] = {}
 
     # ─── boas-vindas ───
     @commands.Cog.listener()
@@ -104,11 +106,12 @@ class Voz(commands.Cog, name="Voz"):
         if depois.channel.id != vc.channel.id:
             return
         agora = time.monotonic()
-        if agora - self._ultimo_oi.get(membro.guild.id, 0) < OI_COOLDOWN:
+        chave = (membro.guild.id, membro.id)
+        if agora - self._ultimo_oi.get(chave, 0) < OI_COOLDOWN:
             return
         erro = _tocar_oi(vc)
         if erro is None:
-            self._ultimo_oi[membro.guild.id] = agora
+            self._ultimo_oi[chave] = agora
             log.info("oi pra %s na call", membro.display_name)
 
     # ─── >call ───
