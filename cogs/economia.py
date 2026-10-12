@@ -29,14 +29,60 @@ AURAS = {
 }
 
 # ─── axolotls colecionáveis (gacha, peso soma 100) ───
+# bruxinho e demonio tem peso 0: nunca saem no giro, so
+# comprando com doces ou na caixa rara. peso 0 no
+# random.choices nunca e sorteado.
 AXOLOTLS = {
-    "bebe":      {"nome": "bebê axolotl",       "rar": "comum",    "peso": 40},
-    "rosa":      {"nome": "axolotl rosa",       "rar": "comum",    "peso": 25},
-    "musgo":     {"nome": "axolotl de musgo",   "rar": "incomum",  "peso": 15},
-    "dourado":   {"nome": "axolotl dourado",    "rar": "raro",     "peso": 10},
-    "cristal":   {"nome": "axolotl de cristal", "rar": "épico",    "peso": 6},
-    "abissal":   {"nome": "axolotl abissal",    "rar": "épico",    "peso": 3},
-    "ancestral": {"nome": "axolotl ancestral",  "rar": "lendário", "peso": 1},
+    "bebe":      {"nome": "bebê axolotl",       "rar": "comum",    "peso": 25},
+    "rosa":      {"nome": "axolotl rosa",       "rar": "comum",    "peso": 16},
+    "amarelo":   {"nome": "axolotl amarelo",    "rar": "comum",    "peso": 10},
+    "verde":     {"nome": "axolotl verde",      "rar": "comum",    "peso": 10},
+    "branco":    {"nome": "axolotl branco",     "rar": "comum",    "peso": 8},
+    "musgo":     {"nome": "axolotl de musgo",   "rar": "incomum",  "peso": 8},
+    "azul":      {"nome": "axolotl azul",       "rar": "incomum",  "peso": 5},
+    "preto":     {"nome": "axolotl preto",      "rar": "incomum",  "peso": 4},
+    "dourado":   {"nome": "axolotl dourado",    "rar": "raro",     "peso": 5},
+    "cristal":   {"nome": "axolotl de cristal", "rar": "raro",     "peso": 4},
+    "toxico":    {"nome": "axolotl tóxico",     "rar": "épico",    "peso": 2},
+    "cosmico":   {"nome": "axolotl cósmico",    "rar": "épico",    "peso": 1.5},
+    "abissal":   {"nome": "axolotl abissal",    "rar": "épico",    "peso": 1},
+    "ancestral": {"nome": "axolotl ancestral",  "rar": "lendário", "peso": 0.3},
+    "bugado":    {"nome": "axolotl bugado",     "rar": "lendário", "peso": 0.1},
+    "roxo":      {"nome": "axolotl roxo",       "rar": "lendário", "peso": 0.1},
+    "bruxinho":  {"nome": "axolotl bruxinho",   "rar": "lendário", "peso": 0},
+    "demonio":   {"nome": "axolotl demônio",    "rar": "lendário", "peso": 0},
+}
+
+# ids antigos renomeados: quem ja tem no banco continua vendo o nome certo.
+ALIAS_AXOLOTL = {"glitch": "bugado"}
+
+# ─── loja de doces (id -> nome, preço em doces, descrição) ───
+DOCES_LOJA = {
+    "ametista1": {"nome": "1 ametista",       "preco": 20,  "desc": "troca doces por ametista"},
+    "dima50":    {"nome": "50 diamantes",     "preco": 30,  "desc": "troca doces por diamantes"},
+    "bruxinho":  {"nome": "axolotl bruxinho", "preco": 300, "desc": "exclusivo de halloween, lendário"},
+    "demonio":   {"nome": "axolotl demônio",  "preco": 666, "desc": "o preço do lago, lendário"},
+}
+
+# ─── caixas (loot box: 3 axolotls por abertura) ───
+CAIXA_CUSTO = 150       # diamantes pela caixa comum
+CAIXA_RARA_CUSTO = 15   # ametista pela caixa rara
+
+# pool da caixa rara: so de incomum pra cima (soma 100).
+POOL_RARO = {
+    "musgo":     10,
+    "dourado":   13,
+    "cristal":   11,
+    "toxico":    12,
+    "cosmico":   10,
+    "azul":      8,
+    "preto":     7,
+    "abissal":   10,
+    "ancestral": 8,
+    "bruxinho":  5,
+    "bugado":    4,
+    "roxo":      1,
+    "demonio":   1,
 }
 
 COR_RAR = {
@@ -52,11 +98,28 @@ _ESCOLHAS_AURA = [
     app_commands.Choice(name=info["nome"], value=aid) for aid, info in AURAS.items()
 ]
 
+# tudo que o /buy vende: auras + itens de doces.
+_ESCOLHAS_BUY = _ESCOLHAS_AURA + [
+    app_commands.Choice(name=info["nome"], value=iid) for iid, info in DOCES_LOJA.items()
+]
+
 
 def _sortear_axolotl() -> str:
     ids = list(AXOLOTLS)
     pesos = [AXOLOTLS[i]["peso"] for i in ids]
     return random.choices(ids, weights=pesos, k=1)[0]
+
+
+def _sortear_raro() -> str:
+    """1 axolotl do pool da caixa rara (sem comum)."""
+    ids = list(POOL_RARO)
+    pesos = [POOL_RARO[i] for i in ids]
+    return random.choices(ids, weights=pesos, k=1)[0]
+
+
+def _abrir_caixa(sorteio) -> list[str]:
+    """abre 1 caixa: 3 sorteios com a funcao dada."""
+    return [sorteio() for _ in range(3)]
 
 
 def _embed_saldo(membro: discord.Member, dima: int, amet: int, aura_id: str | None, total_axo: int) -> discord.Embed:
@@ -72,6 +135,66 @@ def _embed_saldo(membro: discord.Member, dima: int, amet: int, aura_id: str | No
     embed.set_thumbnail(url=membro.display_avatar.url)
     embed.set_footer(text=visual.FOOTER)
     return embed
+
+
+async def _pagar_e_sortear(user_id: int, rara: bool) -> list[str] | None:
+    """cobra a caixa e devolve os 3 ids. None se sem saldo."""
+    if rara:
+        _, amet, _ = await asyncio.to_thread(data.buscar_saldo, user_id)
+        if amet < CAIXA_RARA_CUSTO:
+            return None
+        await asyncio.to_thread(data.adicionar_ametista, user_id, -CAIXA_RARA_CUSTO)
+        itens = _abrir_caixa(_sortear_raro)
+    else:
+        dima, _, _ = await asyncio.to_thread(data.buscar_saldo, user_id)
+        if dima < CAIXA_CUSTO:
+            return None
+        await asyncio.to_thread(data.adicionar_diamantes, user_id, -CAIXA_CUSTO)
+        itens = _abrir_caixa(_sortear_axolotl)
+    for aid in itens:
+        await asyncio.to_thread(data.adicionar_axolotl, user_id, aid)
+    return itens
+
+
+async def _animar_caixa(edit, titulo: str, itens: list[str], view: discord.ui.View | None):
+    """revela os 3 um por vez (~1s cada). `edit` recebe embed/view."""
+    await asyncio.sleep(0.9)
+    for n in (1, 2):
+        await edit(embed=Economia._embed_parcial(titulo, itens, n))
+        await asyncio.sleep(0.9)
+    await edit(embed=Economia._embed_caixa(titulo, itens), view=view)
+
+
+class CaixaView(discord.ui.View):
+    """botao abrir outra. so quem abriu usa. expira em 2min."""
+
+    def __init__(self, dono_id: int, rara: bool):
+        super().__init__(timeout=120)
+        self.dono_id = dono_id
+        self.rara = rara
+
+    @discord.ui.button(label="abrir outra", emoji="🎁", style=discord.ButtonStyle.primary)
+    async def outra(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if interaction.user.id != self.dono_id:
+            await interaction.response.send_message(
+                "só quem abriu a caixa usa esse botão!", ephemeral=True
+            )
+            return
+        itens = await _pagar_e_sortear(self.dono_id, self.rara)
+        if itens is None:
+            moeda = visual.AMETHYST if self.rara else visual.DIAMANTE
+            custo = CAIXA_RARA_CUSTO if self.rara else CAIXA_CUSTO
+            await interaction.response.send_message(
+                f"sem saldo! a caixa custa **{custo}** {moeda}.", ephemeral=True
+            )
+            return
+        moeda = visual.AMETHYST if self.rara else visual.DIAMANTE
+        nome = "caixa rara" if self.rara else "caixa"
+        titulo = f"{moeda} você abriu outra {nome}!"
+        await interaction.response.send_message(
+            embed=Economia._embed_parcial(titulo, itens, 0)
+        )
+        await _animar_caixa(interaction.edit_original_response, titulo, itens, self)
 
 
 class Economia(commands.Cog, name="Economia"):
@@ -204,11 +327,12 @@ class Economia(commands.Cog, name="Economia"):
     # ─── >loja ───
     @commands.command(name="loja")
     async def loja(self, ctx: commands.Context):
-        """mostra as auras à venda e o giro de axolotl."""
-        # uma query so pras auras em vez de uma por item da loja.
-        (dima, amet, aura), minhas = await asyncio.gather(
+        """mostra as auras, os doces e as caixas à venda."""
+        # leituras independentes, roda junto.
+        (dima, amet, aura), minhas, doces = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, ctx.author.id),
             asyncio.to_thread(data.auras_usuario, ctx.author.id),
+            asyncio.to_thread(data.buscar_doces, ctx.author.id),
         )
         minhas = set(minhas)
         linhas = []
@@ -225,28 +349,53 @@ class Economia(commands.Cog, name="Economia"):
         )
         embed.add_field(
             name=f"{visual.AXOLOTL} giro de axolotl",
-            value=f"`>roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 dos 7 axolotls.",
+            value=f"`>roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 axolotl.",
+            inline=False,
+        )
+        linhas_doces = []
+        for iid, info in DOCES_LOJA.items():
+            linhas_doces.append(
+                f"`{iid}` — **{info['nome']}** — **{info['preco']}** 🍬\n└ {info['desc']}"
+            )
+        embed.add_field(
+            name="🍬 loja de doces",
+            value="\n\n".join(linhas_doces),
+            inline=False,
+        )
+        embed.add_field(
+            name=f"{visual.DIAMANTE} caixas",
+            value=(
+                f"`>caixa` — **{CAIXA_CUSTO}** {visual.DIAMANTE}: 3 axolotls do pool normal.\n"
+                f"`>caixarara` — **{CAIXA_RARA_CUSTO}** {visual.AMETHYST}: 3 axolotls raros (sem comum, com chance de roxo, bruxinho e demônio)."
+            ),
             inline=False,
         )
         embed.add_field(
             name="seu saldo",
-            value=f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST}",
+            value=f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST} • **{doces}** 🍬",
             inline=False,
         )
-        embed.set_footer(text=f">buy <id> compra aura • >aura <id> equipa • {visual.FOOTER}")
+        embed.set_footer(text=f">buy <id> compra • >aura <id> equipa • {visual.FOOTER}")
         await ctx.send(embed=embed)
 
     # ─── >buy ───
     @commands.command(name="buy")
-    async def buy(self, ctx: commands.Context, aura_id: str = None):
-        """compra uma aura com ametista. ex: `>buy brisa`."""
-        if aura_id is None or aura_id.lower() not in AURAS:
+    async def buy(self, ctx: commands.Context, item_id: str = None):
+        """compra aura com ametista ou item com doces. ex: `>buy brisa`, `>buy dima50`."""
+        if item_id is None:
+            await ctx.send(f"{visual.AXOLOTL} uso: `>buy <id>` — veja os ids com `>loja`.")
+            return
+        item_id = item_id.lower()
+        if item_id in DOCES_LOJA:
+            await self._buy_doces(ctx, item_id)
+            return
+        if item_id not in AURAS:
             await ctx.send(
-                f"{visual.AXOLOTL} aura inválida! veja com `>loja`. opções: "
-                + ", ".join(f"`{k}`" for k in AURAS)
+                f"{visual.AXOLOTL} item inválido! veja com `>loja`. opções: "
+                + ", ".join(f"`{k}`" for k in list(AURAS) + list(DOCES_LOJA))
             )
             return
-        aura_id = aura_id.lower()
+        aura_id = item_id
         if await asyncio.to_thread(data.tem_aura, ctx.author.id, aura_id):
             await ctx.send(f"{visual.AXOLOTL} você já tem essa aura! use `>aura {aura_id}` pra equipar.")
             return
@@ -263,6 +412,30 @@ class Economia(commands.Cog, name="Economia"):
         await ctx.send(
             f"{visual.AXOLOTL} {ctx.author.mention} comprou e equipou **{AURAS[aura_id]['nome']}**!"
         )
+
+    async def _trocar_doces(self, user_id: int, item_id: str) -> str:
+        """troca doces pelo item. devolve a msg pronta. vale pro `>` e pro `/`."""
+        info = DOCES_LOJA[item_id]
+        ok, _ = await asyncio.to_thread(data.gastar_doces, user_id, info["preco"])
+        if not ok:
+            return f"🍬 faltam doces pra **{info['nome']}**! custa **{info['preco']}** 🍬."
+        if item_id == "ametista1":
+            await asyncio.to_thread(data.adicionar_ametista, user_id, 1)
+            return f"🍬 trocou **{info['preco']}** doces por **1** {visual.AMETHYST}!"
+        if item_id == "dima50":
+            await asyncio.to_thread(data.adicionar_diamantes, user_id, 50)
+            return f"🍬 trocou **{info['preco']}** doces por **50** {visual.DIAMANTE}!"
+        qtd = await asyncio.to_thread(data.adicionar_axolotl, user_id, item_id)
+        axo = AXOLOTLS[item_id]
+        return (
+            f"🍬 trocou **{info['preco']}** doces por **{axo['nome']}** ({axo['rar']})! "
+            f"você tem **{qtd}x** esse."
+        )
+
+    async def _buy_doces(self, ctx: commands.Context, item_id: str):
+        """atalho do prefixo pra troca com doces."""
+        msg = await self._trocar_doces(ctx.author.id, item_id)
+        await ctx.send(f"{visual.AXOLOTL} {ctx.author.mention} {msg}")
 
     # ─── >aura / >auras ───
     @commands.command(name="aura")
@@ -342,6 +515,108 @@ class Economia(commands.Cog, name="Economia"):
         embed.set_footer(text=visual.FOOTER)
         await interaction.response.send_message(embed=embed)
 
+    # ─── caixas ───
+    @staticmethod
+    def _embed_parcial(titulo: str, itens: list[str], revelados: int) -> discord.Embed:
+        """suspense da abertura: revelados a mostra, resto ❓."""
+        linhas = []
+        for j, aid in enumerate(itens):
+            if j < revelados:
+                info = AXOLOTLS.get(aid, {"nome": aid, "rar": "?"})
+                linhas.append(f"• **{info['nome']}** ({info['rar']})")
+            else:
+                linhas.append("• ❓ ???")
+        embed = discord.Embed(
+            title=titulo,
+            description="\n".join(linhas),
+            color=visual.PRIMARY,
+        )
+        embed.set_footer(text=visual.FOOTER)
+        return embed
+
+    @staticmethod
+    def _embed_caixa(titulo: str, itens: list[str]) -> discord.Embed:
+        """embed da caixa aberta: os 3 axolotls. cor = raridade mais alta."""
+        ordem = {"comum": 0, "incomum": 1, "raro": 2, "épico": 3, "lendário": 4}
+        melhor = "comum"
+        linhas = []
+        for aid in itens:
+            info = AXOLOTLS.get(aid, {"nome": aid, "rar": "?"})
+            linhas.append(f"• **{info['nome']}** ({info['rar']})")
+            if ordem.get(info["rar"], 0) > ordem.get(melhor, 0):
+                melhor = info["rar"]
+        embed = discord.Embed(
+            title=titulo,
+            description="\n".join(linhas),
+            color=COR_RAR.get(melhor, visual.PRIMARY),
+        )
+        embed.set_footer(text=visual.FOOTER)
+        return embed
+
+    # ─── >caixa ───
+    @commands.command(name="caixa")
+    async def caixa(self, ctx: commands.Context):
+        """abre a caixa comum: 150 diamantes = 3 axolotls do pool normal."""
+        itens = await _pagar_e_sortear(ctx.author.id, False)
+        if itens is None:
+            dima, _, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
+            await ctx.send(
+                f"{visual.DIAMANTE} a caixa custa **{CAIXA_CUSTO}** diamantes! "
+                f"(você tem **{dima}**)"
+            )
+            return
+        titulo = f"{visual.DIAMANTE} {ctx.author.display_name} abriu a caixa!"
+        msg = await ctx.send(embed=self._embed_parcial(titulo, itens, 0))
+        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, False))
+
+    @app_commands.command(name="caixa", description="abre a caixa comum: 150 diamantes = 3 axolotls.")
+    async def caixa_slash(self, interaction: discord.Interaction):
+        """versão slash do >caixa."""
+        itens = await _pagar_e_sortear(interaction.user.id, False)
+        if itens is None:
+            await interaction.response.send_message(
+                f"{visual.DIAMANTE} a caixa custa **{CAIXA_CUSTO}** diamantes!",
+                ephemeral=True,
+            )
+            return
+        titulo = f"{visual.DIAMANTE} você abriu a caixa!"
+        await interaction.response.send_message(embed=self._embed_parcial(titulo, itens, 0))
+        await _animar_caixa(
+            interaction.edit_original_response, titulo, itens, CaixaView(interaction.user.id, False)
+        )
+
+    # ─── >caixarara ───
+    @commands.command(name="caixarara")
+    async def caixarara(self, ctx: commands.Context):
+        """abre a caixa rara: 15 ametista = 3 axolotls sem comum (com roxo, bruxinho e demônio)."""
+        itens = await _pagar_e_sortear(ctx.author.id, True)
+        if itens is None:
+            _, amet, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
+            await ctx.send(
+                f"{visual.AMETHYST} a caixa rara custa **{CAIXA_RARA_CUSTO}** ametista! "
+                f"(você tem **{amet}** — pegue com `>daily`)"
+            )
+            return
+        titulo = f"{visual.AMETHYST} {ctx.author.display_name} abriu a caixa rara!"
+        msg = await ctx.send(embed=self._embed_parcial(titulo, itens, 0))
+        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, True))
+
+    @app_commands.command(name="caixarara", description="abre a caixa rara: 15 ametista = 3 axolotls raros.")
+    async def caixarara_slash(self, interaction: discord.Interaction):
+        """versão slash do >caixarara."""
+        itens = await _pagar_e_sortear(interaction.user.id, True)
+        if itens is None:
+            await interaction.response.send_message(
+                f"{visual.AMETHYST} a caixa rara custa **{CAIXA_RARA_CUSTO}** ametista!",
+                ephemeral=True,
+            )
+            return
+        titulo = f"{visual.AMETHYST} você abriu a caixa rara!"
+        await interaction.response.send_message(embed=self._embed_parcial(titulo, itens, 0))
+        await _animar_caixa(
+            interaction.edit_original_response, titulo, itens, CaixaView(interaction.user.id, True)
+        )
+
     # ─── >colecao ───
     @commands.command(name="colecao")
     async def colecao(self, ctx: commands.Context, membro: discord.Member = None):
@@ -355,6 +630,7 @@ class Economia(commands.Cog, name="Economia"):
             return
         linhas = []
         for aid, qtd in itens:
+            aid = ALIAS_AXOLOTL.get(aid, aid)
             info = AXOLOTLS.get(aid, {"nome": aid, "rar": "?"})
             linhas.append(f"• **{info['nome']}** ({info['rar']}) — **{qtd}x**")
         embed = discord.Embed(
@@ -455,14 +731,15 @@ class Economia(commands.Cog, name="Economia"):
             )
 
     # ─── /loja ───
-    @app_commands.command(name="loja", description="mostra as auras à venda e o giro de axolotl.")
+    @app_commands.command(name="loja", description="mostra as auras, os doces e as caixas à venda.")
     async def loja_slash(self, interaction: discord.Interaction):
         """versão slash do >loja."""
         user_id = interaction.user.id
-        # uma query so pras auras em vez de uma por item da loja.
-        (dima, amet, aura), minhas = await asyncio.gather(
+        # leituras independentes, roda junto.
+        (dima, amet, aura), minhas, doces = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, user_id),
             asyncio.to_thread(data.auras_usuario, user_id),
+            asyncio.to_thread(data.buscar_doces, user_id),
         )
         minhas = set(minhas)
         linhas = []
@@ -479,24 +756,46 @@ class Economia(commands.Cog, name="Economia"):
         )
         embed.add_field(
             name=f"{visual.AXOLOTL} giro de axolotl",
-            value=f"`/roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 dos 7 axolotls.",
+            value=f"`/roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 axolotl.",
+            inline=False,
+        )
+        linhas_doces = []
+        for iid, info in DOCES_LOJA.items():
+            linhas_doces.append(
+                f"`{iid}` — **{info['nome']}** — **{info['preco']}** 🍬\n└ {info['desc']}"
+            )
+        embed.add_field(
+            name="🍬 loja de doces",
+            value="\n\n".join(linhas_doces),
+            inline=False,
+        )
+        embed.add_field(
+            name=f"{visual.DIAMANTE} caixas",
+            value=(
+                f"`/caixa` — **{CAIXA_CUSTO}** {visual.DIAMANTE}: 3 axolotls do pool normal.\n"
+                f"`/caixarara` — **{CAIXA_RARA_CUSTO}** {visual.AMETHYST}: 3 axolotls raros (sem comum, com chance de roxo, bruxinho e demônio)."
+            ),
             inline=False,
         )
         embed.add_field(
             name="seu saldo",
-            value=f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST}",
+            value=f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST} • **{doces}** 🍬",
             inline=False,
         )
-        embed.set_footer(text=f"/buy compra aura • /aura equipa • {visual.FOOTER}")
+        embed.set_footer(text=f"/buy compra • /aura equipa • {visual.FOOTER}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ─── /buy ───
-    @app_commands.command(name="buy", description="compra uma aura com ametista.")
-    @app_commands.describe(aura_id="qual aura comprar")
-    @app_commands.choices(aura_id=_ESCOLHAS_AURA)
+    @app_commands.command(name="buy", description="compra aura com ametista ou item com doces.")
+    @app_commands.describe(aura_id="o que comprar")
+    @app_commands.choices(aura_id=_ESCOLHAS_BUY)
     async def buy_slash(self, interaction: discord.Interaction, aura_id: str):
         """versão slash do >buy."""
         user_id = interaction.user.id
+        if aura_id in DOCES_LOJA:
+            msg = await self._trocar_doces(user_id, aura_id)
+            await interaction.response.send_message(f"{visual.AXOLOTL} {msg}")
+            return
         if await asyncio.to_thread(data.tem_aura, user_id, aura_id):
             await interaction.response.send_message(
                 f"{visual.AXOLOTL} você já tem essa aura! equipe com `/aura`.",
@@ -574,6 +873,7 @@ class Economia(commands.Cog, name="Economia"):
             return
         linhas = []
         for aid, qtd in itens:
+            aid = ALIAS_AXOLOTL.get(aid, aid)
             info = AXOLOTLS.get(aid, {"nome": aid, "rar": "?"})
             linhas.append(f"• **{info['nome']}** ({info['rar']}) — **{qtd}x**")
         embed = discord.Embed(

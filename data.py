@@ -787,6 +787,27 @@ def ganhar_doces(user_id: int, qtd: int) -> int:
         return row["doces"]
 
 
+def gastar_doces(user_id: int, qtd: int) -> tuple[bool, int]:
+    """gasta doces se tiver saldo. retorna (ok, total_atual)."""
+    if qtd <= 0:
+        return False, buscar_doces(user_id)
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        total = row["doces"] if row else 0
+        if total < qtd:
+            return False, total
+        total -= qtd
+        conn.execute(
+            "INSERT INTO doces (user_id, doces) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET doces = ?",
+            (user_id, total, total),
+        )
+        return True, total
+
+
 def top_doces(limite: int = 5) -> list[tuple[int, int]]:
     """top N por doces. retorna [(user_id, doces)]."""
     with _lock, _conectar() as conn:
