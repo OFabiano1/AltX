@@ -64,8 +64,11 @@ def test_ptp_invalido_quebra_alto(banco):
 def test_mines_persiste_e_reembolsa(banco):
     banco.salvar_mines(1, "dima", 100, {1, 2, 3})
     assert banco.buscar_mines(1)["valor"] == 100
-    assert banco.abrir_mines(1, 5)["abertos"] == {5}
-    assert banco.abrir_mines(2, 5) is None
+    jogo, nova = banco.abrir_mines(1, 5)
+    assert (jogo["abertos"], nova) == ({5}, True)
+    jogo, nova = banco.abrir_mines(1, 5)
+    assert (jogo["abertos"], nova) == ({5}, False)
+    assert banco.abrir_mines(2, 5) == (None, False)
     # boot: lista, reembolsa, remove
     pendentes = banco.listar_mines()
     assert len(pendentes) == 1
@@ -114,6 +117,24 @@ def test_posicao_e_recentes(banco):
     assert banco.snapshot(1, "2099-01-01")["pos"] == 1
 
 
+def test_reset_conquistas(banco):
+    banco.dar_conquista(1, "nivel5", "x")
+    banco.dar_conquista(2, "nivel5", "x")
+    assert banco.resetar_conquistas(1) == 1
+    assert banco.conquistas_usuario(1) == []
+    assert banco.resetar_conquistas() == 1
+    assert banco.conquistas_usuario(2) == []
+
+
+def test_cortar_diamantes(banco):
+    banco.adicionar_diamantes(1, 101)
+    banco.adicionar_diamantes(2, 50)
+    afetados, antes, depois = banco.cortar_diamantes()
+    assert (afetados, antes, depois) == (2, 151, 75)
+    assert banco.buscar_saldo(1)[0] == 50
+    assert banco.buscar_saldo(2)[0] == 25
+
+
 def test_conquistas_avaliar():
     from conquistas import avaliar, CONQUISTAS
 
@@ -149,3 +170,127 @@ def test_mines_mult():
     assert MINAS_TOTAL == 20
     assert _mult_mines(0, 3) == 1.0
     assert _mult_mines(1, 15) > _mult_mines(1, 3) > 1.0
+
+
+def test_apostas_simultaneas(banco):
+    """20 apostas de 100 com saldo pra 10: exatas 10 passam, nunca negativo."""
+    import asyncio
+
+    from cogs.bet import _cobrar
+
+    banco.adicionar_diamantes(1, 1000)
+
+    async def t():
+        return await asyncio.gather(*[_cobrar(1, "dima", 100) for _ in range(20)])
+
+    res = asyncio.run(t())
+    assert sum(1 for ok, _ in res if ok) == 10
+    assert banco.buscar_saldo(1)[0] == 0
+
+
+class _RespFake:
+    def __init__(self):
+        self.edits = []
+        self.deferred = 0
+        self.follows = []
+
+    async def defer(self):
+        self.deferred += 1
+
+    async def edit_message(self, **kw):
+        self.edits.append(kw)
+
+    async def send_message(self, *a, **k):
+        pass
+
+
+class _InterFake:
+    def __init__(self, u):
+        self.user = type("U", (), {"id": u})()
+        self.response = _RespFake()
+        self.follows = []
+
+    async def edit_original_response(self, **kw):
+        self.response.edits.append(kw)
+
+    async def followup_send(self, *a, **k):
+        self.follows.append((a, k))
+
+    @property
+    def followup(self):
+        return self
+
+    async def send(self, *a, **k):
+        self.follows.append((a, k))
+
+
+def test_mines_duplo_clique(banco):
+    """3 cliques juntos no mesmo tile: sem deadlock, sem duplicar, jogo acaba."""
+    import asyncio
+
+    from cogs import bet
+
+    async def t():
+        banco.adicionar_diamantes(1, 1000)
+        await bet._comecar_mines(1, "dima", 100)
+        jogo = banco.buscar_mines(1)
+        seguro = next(x for x in range(20) if x not in jogo["minas"])
+        inters = [_InterFake(1) for _ in range(3)]
+        await asyncio.wait_for(
+            asyncio.gather(*[bet._cavar(i, 1, seguro) for i in inters]),
+            timeout=20,
+        )
+        # 1 abriu + 2 tentaram sacar cedo: jogo segue vivo, sem deadlock
+        assert banco.buscar_mines(1) is not None
+        assert len(banco.buscar_mines(1)["abertos"]) == 1
+        # todo clique confirmou na hora (defer), ninguem travou
+        assert all(i.response.deferred == 1 for i in inters)
+        # abre +2 e saca: ai sim acaba
+        segs = [x for x in range(20) if x not in jogo["minas"] and x != seguro][:2]
+        for s in segs:
+            await bet._cavar(_InterFake(1), 1, s)
+        await bet._sacar_nucleo(1, _InterFake(1))
+        assert banco.buscar_mines(1) is None
+
+    asyncio.run(t())
+
+
+def test_minas_por_valor():
+    from cogs.bet import _minas_por_valor
+
+    assert _minas_por_valor(1) == 3
+    assert _minas_por_valor(49) == 3
+    assert _minas_por_valor(50) == 5
+    assert _minas_por_valor(149) == 5
+    assert _minas_por_valor(150) == 8
+    assert _minas_por_valor(299) == 8
+    assert _minas_por_valor(300) == 12
+    assert _minas_por_valor(599) == 12
+    assert _minas_por_valor(600) == 15
+    assert _minas_por_valor(1000) == 15
+
+
+def test_mines_minimo_saque(banco):
+    """menos de 3 abertas: retirar nega e o jogo continua."""
+    import asyncio
+
+    from cogs import bet
+
+    async def t():
+        banco.adicionar_diamantes(1, 1000)
+        await bet._comecar_mines(1, "dima", 100)
+        jogo = banco.buscar_mines(1)
+        assert len(jogo["minas"]) == 5  # 100 -> faixa 5
+        seguro = next(x for x in range(20) if x not in jogo["minas"])
+        i = _InterFake(1)
+        await bet._cavar(i, 1, seguro)
+        await bet._sacar_nucleo(1, i)
+        assert banco.buscar_mines(1) is not None  # segue vivo
+        assert any("3" in str(a) for a, _ in i.follows)
+        segs = [x for x in range(20) if x not in jogo["minas"] and x != seguro][:2]
+        for s in segs:
+            await bet._cavar(_InterFake(1), 1, s)
+        await bet._sacar_nucleo(1, i)
+        assert banco.buscar_mines(1) is None  # com 3 sacou
+
+    asyncio.run(t())

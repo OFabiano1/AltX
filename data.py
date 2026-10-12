@@ -919,6 +919,36 @@ def conquistas_recentes(user_id: int, limite: int = 3) -> list[str]:
     return [r["conquista_id"] for r in rows]
 
 
+def resetar_conquistas(user_id: int | None = None) -> int:
+    """apaga conquistas: de 1 membro ou de todo mundo. retorna qtas sairam."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if user_id is None:
+            cur = conn.execute("DELETE FROM conquistas")
+        else:
+            cur = conn.execute(
+                "DELETE FROM conquistas WHERE user_id = ?", (user_id,)
+            )
+        return cur.rowcount
+
+
+def cortar_diamantes() -> tuple[int, int, int]:
+    """divide os diamantes de todo mundo por 2 (floor). retorna (afetados, antes, depois)."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        antes = (
+            conn.execute("SELECT COALESCE(SUM(diamantes), 0) FROM economia").fetchone()[0]
+        )
+        cur = conn.execute(
+            "UPDATE economia SET diamantes = CAST(diamantes / 2 AS INTEGER) "
+            "WHERE diamantes > 0"
+        )
+        depois = (
+            conn.execute("SELECT COALESCE(SUM(diamantes), 0) FROM economia").fetchone()[0]
+        )
+        return cur.rowcount, antes, depois
+
+
 def conquistas_usuario(user_id: int) -> list[str]:
     with _conectar() as conn:
         rows = conn.execute(
@@ -1005,23 +1035,25 @@ def buscar_mines(user_id: int) -> dict | None:
     return _linha_mines(row) if row is not None else None
 
 
-def abrir_mines(user_id: int, idx: int) -> dict | None:
-    """marca a pedra aberta. None se sem jogo."""
+def abrir_mines(user_id: int, idx: int) -> tuple[dict | None, bool]:
+    """marca a pedra aberta. retorna (jogo, nova?) — (None, False) se sem jogo."""
     with _lock, _conectar() as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT * FROM mines_jogos WHERE user_id = ?", (user_id,)
         ).fetchone()
         if row is None:
-            return None
-        abertos = _de_csv(row["abertos"]) | {idx}
+            return None, False
+        abertos = _de_csv(row["abertos"])
+        nova = idx not in abertos
+        abertos.add(idx)
         conn.execute(
             "UPDATE mines_jogos SET abertos = ? WHERE user_id = ?",
             (_csv(abertos), user_id),
         )
         jogo = _linha_mines(row)
         jogo["abertos"] = abertos
-        return jogo
+        return jogo, nova
 
 
 def remover_mines(user_id: int) -> dict | None:

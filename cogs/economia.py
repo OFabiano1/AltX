@@ -196,23 +196,25 @@ def _embed_saldo(
     return embed
 
 
-async def _pagar_e_sortear(user_id: int, rara: bool) -> list[str] | None:
-    """cobra a caixa e devolve os 3 ids. None se sem saldo."""
+async def _pagar_e_sortear(user_id: int, rara: bool) -> tuple[list[str] | None, int]:
+    """cobra a caixa numa transacao so. retorna (itens, saldo) — itens None se sem saldo."""
     if rara:
-        _, amet, _ = await asyncio.to_thread(data.buscar_saldo, user_id)
-        if amet < CAIXA_RARA_CUSTO:
-            return None
-        await asyncio.to_thread(data.adicionar_ametista, user_id, -CAIXA_RARA_CUSTO)
+        ok, saldo = await asyncio.to_thread(
+            data.debitar_moeda, user_id, "amet", CAIXA_RARA_CUSTO
+        )
+        if not ok:
+            return None, saldo
         itens = _abrir_caixa(_sortear_raro)
     else:
-        dima, _, _ = await asyncio.to_thread(data.buscar_saldo, user_id)
-        if dima < CAIXA_CUSTO:
-            return None
-        await asyncio.to_thread(data.adicionar_diamantes, user_id, -CAIXA_CUSTO)
+        ok, saldo = await asyncio.to_thread(
+            data.debitar_moeda, user_id, "dima", CAIXA_CUSTO
+        )
+        if not ok:
+            return None, saldo
         itens = _abrir_caixa(_sortear_axolotl)
     for aid in itens:
         await asyncio.to_thread(data.adicionar_axolotl, user_id, aid)
-    return itens
+    return itens, saldo
 
 
 async def _animar_caixa(
@@ -245,7 +247,7 @@ class CaixaView(discord.ui.View):
                 "só quem abriu a caixa usa esse botão!", ephemeral=True
             )
             return
-        itens = await _pagar_e_sortear(self.dono_id, self.rara)
+        itens, _saldo = await _pagar_e_sortear(self.dono_id, self.rara)
         if itens is None:
             moeda = visual.AMETHYST if self.rara else visual.DIAMANTE
             custo = CAIXA_RARA_CUSTO if self.rara else CAIXA_CUSTO
@@ -545,6 +547,28 @@ class Economia(commands.Cog, name="Economia"):
                 f"{visual.AMETHYST} {membro.mention} recebeu **{qtd}** ametista! (total: **{total}**)"
             )
 
+    # ─── >halvdima ───
+    @commands.command(name="halvdima")
+    @commands.has_permissions(administrator=True)
+    async def halvdima(self, ctx: commands.Context):
+        """[admin] divide os diamantes de todo mundo por 2. rode `>backup` antes!"""
+        afetados, antes, depois = await asyncio.to_thread(data.cortar_diamantes)
+        await ctx.send(
+            f"✂️ {visual.DIAMANTE} **{afetados}** saldos cortados pela metade: "
+            f"**{antes}** → **{depois}** no total."
+        )
+
+    # ─── /halvdima ───
+    @app_commands.command(name="halvdima", description="[admin] divide os diamantes de todo mundo por 2.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def halvdima_slash(self, interaction: discord.Interaction):
+        """versão slash do >halvdima."""
+        afetados, antes, depois = await asyncio.to_thread(data.cortar_diamantes)
+        await interaction.response.send_message(
+            f"✂️ {visual.DIAMANTE} **{afetados}** saldos cortados pela metade: "
+            f"**{antes}** → **{depois}** no total."
+        )
+
     # ─── >loja ───
     @commands.command(name="loja")
     async def loja(self, ctx: commands.Context):
@@ -579,14 +603,15 @@ class Economia(commands.Cog, name="Economia"):
         if await asyncio.to_thread(data.tem_aura, ctx.author.id, aura_id):
             await ctx.send(f"{visual.AXOLOTL} você já tem essa aura! use `>equipar {aura_id}`.")
             return
-        _, amet, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
         preco = AURAS[aura_id]["preco"]
-        if amet < preco:
+        ok, saldo = await asyncio.to_thread(
+            data.debitar_moeda, ctx.author.id, "amet", preco
+        )
+        if not ok:
             await ctx.send(
-                f"{visual.AMETHYST} faltam **{preco - amet}** ametista pra **{AURAS[aura_id]['nome']}**!"
+                f"{visual.AMETHYST} faltam **{preco - saldo}** ametista pra **{AURAS[aura_id]['nome']}**!"
             )
             return
-        await asyncio.to_thread(data.adicionar_ametista, ctx.author.id, -preco)
         await asyncio.to_thread(data.dar_aura, ctx.author.id, aura_id)
         await asyncio.to_thread(data.equipar_aura, ctx.author.id, aura_id)
         await ctx.send(
@@ -652,14 +677,15 @@ class Economia(commands.Cog, name="Economia"):
     @commands.command(name="roll")
     async def roll(self, ctx: commands.Context):
         """gira a coleção: 5 ametista = 1 axolotl aleatório."""
-        _, amet, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
-        if amet < ROLL_CUSTO:
+        ok, saldo = await asyncio.to_thread(
+            data.debitar_moeda, ctx.author.id, "amet", ROLL_CUSTO
+        )
+        if not ok:
             await ctx.send(
                 f"{visual.AMETHYST} você precisa de **{ROLL_CUSTO}** ametista pra girar! "
-                f"(você tem **{amet}** — pegue com `>daily`)"
+                f"(você tem **{saldo}** — pegue com `>daily`)"
             )
             return
-        await asyncio.to_thread(data.adicionar_ametista, ctx.author.id, -ROLL_CUSTO)
         sorteado = _sortear_axolotl()
         qtd = await asyncio.to_thread(data.adicionar_axolotl, ctx.author.id, sorteado)
         info = AXOLOTLS[sorteado]
@@ -676,14 +702,15 @@ class Economia(commands.Cog, name="Economia"):
 
     @app_commands.command(name="roll", description="gire 5 ametista e tire um axolotl aleatório.")
     async def roll_slash(self, interaction: discord.Interaction):
-        _, amet, _ = await asyncio.to_thread(data.buscar_saldo, interaction.user.id)
-        if amet < ROLL_CUSTO:
+        ok, _saldo = await asyncio.to_thread(
+            data.debitar_moeda, interaction.user.id, "amet", ROLL_CUSTO
+        )
+        if not ok:
             await interaction.response.send_message(
                 f"{visual.AMETHYST} você precisa de **{ROLL_CUSTO}** ametista pra girar!",
                 ephemeral=True,
             )
             return
-        await asyncio.to_thread(data.adicionar_ametista, interaction.user.id, -ROLL_CUSTO)
         sorteado = _sortear_axolotl()
         qtd = await asyncio.to_thread(data.adicionar_axolotl, interaction.user.id, sorteado)
         info = AXOLOTLS[sorteado]
@@ -742,12 +769,11 @@ class Economia(commands.Cog, name="Economia"):
     @commands.command(name="box", aliases=["caixa"])
     async def box(self, ctx: commands.Context):
         """abre a box comum: 150 diamantes = 3 axolotls do pool normal."""
-        itens = await _pagar_e_sortear(ctx.author.id, False)
+        itens, saldo = await _pagar_e_sortear(ctx.author.id, False)
         if itens is None:
-            dima, _, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
             await ctx.send(
                 f"{visual.DIAMANTE} a caixa custa **{CAIXA_CUSTO}** diamantes! "
-                f"(você tem **{dima}**)"
+                f"(você tem **{saldo}**)"
             )
             return
         titulo = f"{visual.DIAMANTE} {ctx.author.display_name} abriu a caixa!"
@@ -758,7 +784,7 @@ class Economia(commands.Cog, name="Economia"):
     @app_commands.command(name="box", description="abre a box comum: 150 diamantes = 3 axolotls.")
     async def box_slash(self, interaction: discord.Interaction):
         """versão slash do >box."""
-        itens = await _pagar_e_sortear(interaction.user.id, False)
+        itens, _saldo = await _pagar_e_sortear(interaction.user.id, False)
         if itens is None:
             await interaction.response.send_message(
                 f"{visual.DIAMANTE} a caixa custa **{CAIXA_CUSTO}** diamantes!",
@@ -780,12 +806,11 @@ class Economia(commands.Cog, name="Economia"):
     @commands.command(name="caixarara")
     async def caixarara(self, ctx: commands.Context):
         """abre a caixa rara: 15 ametista = 3 axolotls sem comum (com roxo, bruxinho e demônio)."""
-        itens = await _pagar_e_sortear(ctx.author.id, True)
+        itens, saldo = await _pagar_e_sortear(ctx.author.id, True)
         if itens is None:
-            _, amet, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
             await ctx.send(
                 f"{visual.AMETHYST} a caixa rara custa **{CAIXA_RARA_CUSTO}** ametista! "
-                f"(você tem **{amet}** — pegue com `>daily`)"
+                f"(você tem **{saldo}** — pegue com `>daily`)"
             )
             return
         titulo = f"{visual.AMETHYST} {ctx.author.display_name} abriu a caixa rara!"
@@ -796,7 +821,7 @@ class Economia(commands.Cog, name="Economia"):
     @app_commands.command(name="caixarara", description="abre a caixa rara: 15 ametista = 3 axolotls raros.")
     async def caixarara_slash(self, interaction: discord.Interaction):
         """versão slash do >caixarara."""
-        itens = await _pagar_e_sortear(interaction.user.id, True)
+        itens, _saldo = await _pagar_e_sortear(interaction.user.id, True)
         if itens is None:
             await interaction.response.send_message(
                 f"{visual.AMETHYST} a caixa rara custa **{CAIXA_RARA_CUSTO}** ametista!",
@@ -960,15 +985,16 @@ class Economia(commands.Cog, name="Economia"):
                 ephemeral=True,
             )
             return
-        _, amet, _ = await asyncio.to_thread(data.buscar_saldo, user_id)
         preco = AURAS[aura_id]["preco"]
-        if amet < preco:
+        ok, saldo = await asyncio.to_thread(
+            data.debitar_moeda, user_id, "amet", preco
+        )
+        if not ok:
             await interaction.response.send_message(
-                f"{visual.AMETHYST} faltam **{preco - amet}** ametista pra **{AURAS[aura_id]['nome']}**!",
+                f"{visual.AMETHYST} faltam **{preco - saldo}** ametista pra **{AURAS[aura_id]['nome']}**!",
                 ephemeral=True,
             )
             return
-        await asyncio.to_thread(data.adicionar_ametista, user_id, -preco)
         await asyncio.to_thread(data.dar_aura, user_id, aura_id)
         await asyncio.to_thread(data.equipar_aura, user_id, aura_id)
         await interaction.response.send_message(

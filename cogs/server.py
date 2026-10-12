@@ -151,6 +151,31 @@ class Servidor(commands.Cog, name="Servidor"):
         embed.set_footer(text=visual.FOOTER)
         await interaction.response.send_message(embed=embed)
 
+    # ─── >resetconq ───
+    @commands.command(name="resetconq")
+    @commands.has_permissions(administrator=True)
+    async def resetconq(self, ctx: commands.Context, membro: discord.Member = None):
+        """[admin] zera conquistas: de 1 membro ou de todo mundo."""
+        n = await asyncio.to_thread(data.resetar_conquistas, membro.id if membro else None)
+        alvo = membro.mention if membro else "todo mundo"
+        await ctx.send(f"🏆 conquistas de {alvo} zeradas! ({n} saíram)")
+
+    # ─── /resetconq ───
+    @app_commands.command(name="resetconq", description="[admin] zera conquistas.")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(membro="só as dele (vazio = todo mundo)")
+    async def resetconq_slash(
+        self, interaction: discord.Interaction, membro: discord.Member | None = None
+    ):
+        """versão slash do >resetconq."""
+        n = await asyncio.to_thread(
+            data.resetar_conquistas, membro.id if membro else None  # type: ignore[attr-defined]
+        )
+        alvo = membro.mention if membro else "todo mundo"
+        await interaction.response.send_message(
+            f"🏆 conquistas de {alvo} zeradas! ({n} saíram)"
+        )
+
 
 BARRA_CHEIA = "█"
 BARRA_VAZIA = "░"
