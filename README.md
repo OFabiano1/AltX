@@ -8,7 +8,7 @@ o bot oficial da **axolotl br** — sua comunidade na internet. de player pra pl
 |---|---|
 | geral | `>axolotl` `>ping` `/ping` `>ajuda` |
 | voz | `>call` `>sair` `>oi` |
-| servidor | `>server` (hub) `>perfil` + aviso auto de push no chat |
+| servidor | `>server` (hub) `>player` + aviso auto de push no chat |
 | níveis | `>xp` `>ranking` (`>top`) |
 | jogos | `>ptp` `/ptp` `>placar` `>rankingptp` |
 | economia | `>saldo` `>daily` `>pay` `>loja` `>buy` `>roll` `>colecao` `>topdima` |

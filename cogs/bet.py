@@ -201,16 +201,32 @@ class BetView(discord.ui.View):
         )
 
 
-def _texto_bet(barra: str) -> str:
-    combos = "\n".join(
-        f"{s} {s} {s} — **{m}x**" for s, m in PAGA_TRINCA.items()
+def _embed_bet(barra: str) -> discord.Embed:
+    """hub do axolotl bet: jogos + combos + faixas."""
+    embed = discord.Embed(
+        title="🎰 axolotl bet",
+        description="o cassino do lago. só moeda: ganha ou perde diamante/ametista, nada de item.",
+        color=visual.PRIMARY,
     )
-    return (
-        "o cassino do lago. só moeda: ganha ou perde diamante/ametista, nada de item.\n\n"
-        f"🎰 `{barra}slots <dima|amet> <10|50|100>`\n{combos}\n"
-        "par devolve a aposta.\n\n"
-        f"🪙 `{barra}caraoucoroa <cara|coroa> <dima|amet> <10|50|100>` — 50/50, paga **2x**."
+    embed.add_field(
+        name="🎰 slots",
+        value=(
+            f"`{barra}slots <dima|amet> <10|50|100>`\n"
+            + "\n".join(f"{s} {s} {s} — **{m}x**" for s, m in PAGA_TRINCA.items())
+            + "\npar devolve a aposta."
+        ),
+        inline=False,
     )
+    embed.add_field(
+        name="🪙 cara ou coroa",
+        value=(
+            f"`{barra}caraoucoroa <cara|coroa> <dima|amet> <10|50|100>`\n"
+            "50/50, paga **2x**."
+        ),
+        inline=False,
+    )
+    embed.set_footer(text=f"faixas 10/50/100 • {visual.FOOTER}")
+    return embed
 
 
 class Bet(commands.Cog, name="Axolotl Bet"):
@@ -223,24 +239,12 @@ class Bet(commands.Cog, name="Axolotl Bet"):
     @commands.command(name="bet")
     async def bet(self, ctx: commands.Context):
         """o hub do axolotl bet."""
-        embed = discord.Embed(
-            title="🎰 axolotl bet",
-            description=_texto_bet(">"),
-            color=visual.PRIMARY,
-        )
-        embed.set_footer(text=visual.FOOTER)
-        await ctx.send(embed=embed)
+        await ctx.send(embed=_embed_bet(">"))
 
     @app_commands.command(name="bet", description="o hub do axolotl bet.")
     async def bet_slash(self, interaction: discord.Interaction):
         """versão slash do >bet."""
-        embed = discord.Embed(
-            title="🎰 axolotl bet",
-            description=_texto_bet("/"),
-            color=visual.PRIMARY,
-        )
-        embed.set_footer(text=visual.FOOTER)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=_embed_bet("/"))
 
     # ─── >slots ───
     @commands.command(name="slots")

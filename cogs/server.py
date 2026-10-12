@@ -84,19 +84,19 @@ class Servidor(commands.Cog, name="Servidor"):
         """versão slash do >server."""
         await interaction.response.send_message(embed=_embed_hub(interaction.guild))
 
-    # ─── >perfil ───
-    @commands.command(name="perfil")
-    async def perfil(self, ctx: commands.Context, membro: discord.Member = None):
-        """veja seu perfil completo."""
+    # ─── >player ───
+    @commands.command(name="player", aliases=["perfil"])
+    async def player(self, ctx: commands.Context, membro: discord.Member = None):
+        """veja o player completo (nível, deadlock, economia, coleção)."""
         await ctx.send(embed=await _montar_perfil(membro or ctx.author))
 
-    # ─── /perfil ───
-    @app_commands.command(name="perfil", description="veja seu perfil completo.")
-    @app_commands.describe(membro="ver o perfil de outro membro (opcional)")
-    async def perfil_slash(
+    # ─── /player ───
+    @app_commands.command(name="player", description="veja o player completo.")
+    @app_commands.describe(membro="ver o player de outro membro (opcional)")
+    async def player_slash(
         self, interaction: discord.Interaction, membro: discord.Member | None = None
     ):
-        """versão slash do >perfil."""
+        """versão slash do >player."""
         await interaction.response.defer()
         await interaction.followup.send(
             embed=await _montar_perfil(
@@ -117,7 +117,7 @@ async def _montar_perfil(membro: discord.Member) -> discord.Embed:
     progresso = BARRA_CHEIA * celulas + BARRA_VAZIA * (BARRA_CELULAS - celulas)
 
     embed = discord.Embed(
-        title=f"👤 Perfil de {membro.display_name}",
+        title=f"👤 player {membro.display_name}",
         color=visual.PRIMARY,
     )
     embed.add_field(
