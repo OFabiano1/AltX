@@ -153,6 +153,13 @@ CREATE TABLE IF NOT EXISTS conquistas (
     quando       TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (user_id, conquista_id)
 );
+
+CREATE TABLE IF NOT EXISTS buffs (
+    user_id   INTEGER NOT NULL,
+    tipo      TEXT NOT NULL,
+    expira_em REAL NOT NULL,
+    PRIMARY KEY (user_id, tipo)
+);
 """
 
 
@@ -884,6 +891,44 @@ def conquistas_usuario(user_id: int) -> list[str]:
     return [r["conquista_id"] for r in rows]
 
 
+# ─── buffs 2x (xp2, dima2: multiplica o ganho por msg) ───
+def dar_buff(user_id: int, tipo: str, segundos: int) -> None:
+    """liga/estende o buff. expira = max(agora, atual) + duracao."""
+    import time
+
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT expira_em FROM buffs WHERE user_id = ? AND tipo = ?",
+            (user_id, tipo),
+        ).fetchone()
+        base = max(time.time(), row["expira_em"]) if row else time.time()
+        conn.execute(
+            "INSERT INTO buffs (user_id, tipo, expira_em) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, tipo) DO UPDATE SET expira_em = excluded.expira_em",
+            (user_id, tipo, base + segundos),
+        )
+
+
+def buffs_ativos(user_id: int) -> dict[str, int]:
+    """{tipo: segundos restantes}. limpa os vencidos de passagem."""
+    import time
+
+    agora = time.time()
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM buffs WHERE user_id = ? AND expira_em <= ?", (user_id, agora))
+        rows = conn.execute(
+            "SELECT tipo, expira_em FROM buffs WHERE user_id = ?", (user_id,)
+        ).fetchall()
+    return {r["tipo"]: int(r["expira_em"] - agora) for r in rows}
+
+
+def buff_ativo(user_id: int, tipo: str) -> int:
+    """segundos restantes do buff, 0 se acabou."""
+    return buffs_ativos(user_id).get(tipo, 0)
+
+
 # ─── snapshot do player (tudo numa conexao so: abre rapido) ───
 def snapshot(user_id: int, hoje: str) -> dict:
     """tudo que o >player precisa, numa leitura so.
@@ -948,6 +993,17 @@ def snapshot(user_id: int, hoje: str) -> dict:
         ).fetchone()
         steam = int(r["steam_id"]) if r else None
 
+        import time as _time
+
+        agora_ts = _time.time()
+        buffs = {
+            x["tipo"]: int(x["expira_em"] - agora_ts)
+            for x in conn.execute(
+                "SELECT tipo, expira_em FROM buffs WHERE user_id = ? AND expira_em > ?",
+                (user_id, agora_ts),
+            ).fetchall()
+        }
+
     return {
         "xp": xp,
         "nivel": nivel,
@@ -963,6 +1019,7 @@ def snapshot(user_id: int, hoje: str) -> dict:
         "streak": streak,
         "ptp": ptp,
         "steam": steam,
+        "buffs": buffs,
     }
 
 

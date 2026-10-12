@@ -40,8 +40,11 @@ class Niveis(commands.Cog, name="Níveis"):
 
         # o SQLite é síncrono; tirar do event loop evita travar todos os
         # listeners durante a escrita.
+        ganho = random.randint(XP_MIN, XP_MAX)
+        if await asyncio.to_thread(data.buff_ativo, message.author.id, "xp2"):
+            ganho *= 2
         _, nivel, subiu = await asyncio.to_thread(
-            data.ganhar_xp, message.author.id, random.randint(XP_MIN, XP_MAX)
+            data.ganhar_xp, message.author.id, ganho
         )
 
         if subiu:

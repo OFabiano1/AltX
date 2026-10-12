@@ -130,7 +130,55 @@ def _abrir_caixa(sorteio) -> list[str]:
     return [sorteio() for _ in range(3)]
 
 
-def _embed_saldo(membro: discord.Member, dima: int, amet: int, aura_id: str | None, total_axo: int) -> discord.Embed:
+CAIXA_BUFF_SEG = 30 * 60  # 30min de 2x
+
+
+async def _bonus_caixa(user_id: int, rara: bool) -> list[str]:
+    """sorteia o bonus da caixa: moeda e/ou buff 2x. devolve linhas pro embed."""
+    linhas = []
+    if rara:
+        if random.random() < 0.30:
+            qtd = random.randint(2, 4)
+            await asyncio.to_thread(data.adicionar_ametista, user_id, qtd)
+            linhas.append(f"bonus: **+{qtd}** {visual.AMETHYST}!")
+        if random.random() < 0.10:
+            await asyncio.to_thread(data.dar_buff, user_id, "dima2", CAIXA_BUFF_SEG)
+            linhas.append("bonus: **2x diamantes** por 30min!")
+        if random.random() < 0.10:
+            await asyncio.to_thread(data.dar_buff, user_id, "xp2", CAIXA_BUFF_SEG)
+            linhas.append("bonus: **2x xp** por 30min!")
+    else:
+        if random.random() < 0.30:
+            qtd = random.randint(40, 80)
+            await asyncio.to_thread(data.adicionar_diamantes, user_id, qtd)
+            linhas.append(f"bonus: **+{qtd}** {visual.DIAMANTE}!")
+        if random.random() < 0.08:
+            await asyncio.to_thread(data.dar_buff, user_id, "dima2", CAIXA_BUFF_SEG)
+            linhas.append("bonus: **2x diamantes** por 30min!")
+        if random.random() < 0.08:
+            await asyncio.to_thread(data.dar_buff, user_id, "xp2", CAIXA_BUFF_SEG)
+            linhas.append("bonus: **2x xp** por 30min!")
+    return linhas
+
+
+def _texto_buffs(buffs: dict) -> str:
+    """ex: {'xp2': 700} -> **2x xp** (11min). vazio se sem buff."""
+    nomes = {"xp2": "2x xp", "dima2": "2x dima"}
+
+    def fmt(s: int) -> str:
+        return f"{s // 60}min" if s >= 60 else f"{s}s"
+
+    return " · ".join(f"**{nomes.get(t, t)}** ({fmt(s)})" for t, s in buffs.items() if s > 0)
+
+
+def _embed_saldo(
+    membro: discord.Member,
+    dima: int,
+    amet: int,
+    aura_id: str | None,
+    total_axo: int,
+    buffs: dict | None = None,
+) -> discord.Embed:
     aura_nome = AURAS[aura_id]["nome"] if aura_id in AURAS else "nenhuma"
     embed = discord.Embed(
         title=f"{visual.AXOLOTL} saldo de {membro.display_name}",
@@ -140,6 +188,9 @@ def _embed_saldo(membro: discord.Member, dima: int, amet: int, aura_id: str | No
     embed.add_field(name=f"{visual.AMETHYST} ametista", value=str(amet), inline=True)
     embed.add_field(name="aura", value=aura_nome, inline=True)
     embed.add_field(name=f"{visual.AXOLOTL} axolotls", value=str(total_axo), inline=True)
+    texto_buffs = _texto_buffs(buffs or {})
+    if texto_buffs:
+        embed.add_field(name="⚡ buffs", value=texto_buffs, inline=False)
     embed.set_thumbnail(url=membro.display_avatar.url)
     embed.set_footer(text=visual.FOOTER)
     return embed
@@ -164,13 +215,19 @@ async def _pagar_e_sortear(user_id: int, rara: bool) -> list[str] | None:
     return itens
 
 
-async def _animar_caixa(edit, titulo: str, itens: list[str], view: discord.ui.View | None):
+async def _animar_caixa(
+    edit,
+    titulo: str,
+    itens: list[str],
+    view: discord.ui.View | None,
+    bonus: list[str] | None = None,
+):
     """revela os 3 um por vez (~1s cada). `edit` recebe embed/view."""
     await asyncio.sleep(0.9)
     for n in (1, 2):
         await edit(embed=Economia._embed_parcial(titulo, itens, n))
         await asyncio.sleep(0.9)
-    await edit(embed=Economia._embed_caixa(titulo, itens), view=view)
+    await edit(embed=Economia._embed_caixa(titulo, itens, bonus), view=view)
 
 
 class CaixaView(discord.ui.View):
@@ -199,10 +256,11 @@ class CaixaView(discord.ui.View):
         moeda = visual.AMETHYST if self.rara else visual.DIAMANTE
         nome = "caixa rara" if self.rara else "caixa"
         titulo = f"{moeda} você abriu outra {nome}!"
+        bonus = await _bonus_caixa(self.dono_id, self.rara)
         await interaction.response.send_message(
             embed=Economia._embed_parcial(titulo, itens, 0)
         )
-        await _animar_caixa(interaction.edit_original_response, titulo, itens, self)
+        await _animar_caixa(interaction.edit_original_response, titulo, itens, self, bonus)
 
 
 # emoji de cada secao da loja.
@@ -264,7 +322,7 @@ def _secoes_loja(
         )
     texto_caixas = (
         f"`{barra}roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 axolotl.\n\n"
-        f"`{barra}caixa` — **{CAIXA_CUSTO}** {visual.DIAMANTE}: 3 axolotls do pool normal.\n\n"
+        f"`{barra}box` — **{CAIXA_CUSTO}** {visual.DIAMANTE}: 3 axolotls do pool normal.\n\n"
         f"`{barra}caixarara` — **{CAIXA_RARA_CUSTO}** {visual.AMETHYST}: 3 axolotls raros "
         "(sem comum, com chance de roxo, bruxinho e demônio)."
     )
@@ -293,7 +351,7 @@ def _secoes_loja(
                 "Caixas",
                 "loot box: 3 axolotls por abertura.\n\n" + texto_caixas,
                 saldo,
-                f"{barra}caixa abre • {barra}caixarara abre a rara",
+                f"{barra}box abre • {barra}caixarara abre a rara",
             ),
         ),
     ]
@@ -373,6 +431,8 @@ class Economia(commands.Cog, name="Economia"):
             return
         self.cooldown[message.author.id] = agora
         ganho = random.randint(MSG_DIMA_MIN, MSG_DIMA_MAX)
+        if await asyncio.to_thread(data.buff_ativo, message.author.id, "dima2"):
+            ganho *= 2
         await asyncio.to_thread(data.adicionar_diamantes, message.author.id, ganho)
 
     # ─── >saldo / /saldo ───
@@ -380,25 +440,27 @@ class Economia(commands.Cog, name="Economia"):
     async def saldo(self, ctx: commands.Context, membro: discord.Member = None):
         """veja seus diamantes, ametista, aura e coleção."""
         membro = membro or ctx.author
-        # as duas leituras sao independentes, roda junto.
-        (dima, amet, aura), colecao = await asyncio.gather(
+        # leituras independentes, roda junto.
+        (dima, amet, aura), colecao, buffs = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, membro.id),
             asyncio.to_thread(data.buscar_colecao, membro.id),
+            asyncio.to_thread(data.buffs_ativos, membro.id),
         )
         total = sum(q for _, q in colecao)
-        await ctx.send(embed=_embed_saldo(membro, dima, amet, aura, total))
+        await ctx.send(embed=_embed_saldo(membro, dima, amet, aura, total, buffs))
 
     @app_commands.command(name="saldo", description="veja seus diamantes, ametista, aura e coleção.")
     async def saldo_slash(self, interaction: discord.Interaction):
-        # as duas leituras sao independentes, roda junto.
-        (dima, amet, aura), colecao = await asyncio.gather(
+        # leituras independentes, roda junto.
+        (dima, amet, aura), colecao, buffs = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, interaction.user.id),
             asyncio.to_thread(data.buscar_colecao, interaction.user.id),
+            asyncio.to_thread(data.buffs_ativos, interaction.user.id),
         )
         total = sum(q for _, q in colecao)
         membro = interaction.user
         await interaction.response.send_message(
-            embed=_embed_saldo(membro, dima, amet, aura, total)
+            embed=_embed_saldo(membro, dima, amet, aura, total, buffs)
         )
 
     # ─── >daily / /daily ───
@@ -653,8 +715,10 @@ class Economia(commands.Cog, name="Economia"):
         return embed
 
     @staticmethod
-    def _embed_caixa(titulo: str, itens: list[str]) -> discord.Embed:
-        """embed da caixa aberta: os 3 axolotls. cor = raridade mais alta."""
+    def _embed_caixa(
+        titulo: str, itens: list[str], bonus: list[str] | None = None
+    ) -> discord.Embed:
+        """embed da caixa aberta: os 3 axolotls + bonus. cor = raridade mais alta."""
         ordem = {"comum": 0, "incomum": 1, "raro": 2, "épico": 3, "lendário": 4}
         melhor = "comum"
         linhas = []
@@ -663,6 +727,9 @@ class Economia(commands.Cog, name="Economia"):
             linhas.append(f"• **{info['nome']}** ({info['rar']})")
             if ordem.get(info["rar"], 0) > ordem.get(melhor, 0):
                 melhor = info["rar"]
+        if bonus:
+            linhas.append("")
+            linhas.extend(bonus)
         embed = discord.Embed(
             title=titulo,
             description="\n".join(linhas),
@@ -671,10 +738,10 @@ class Economia(commands.Cog, name="Economia"):
         embed.set_footer(text=visual.FOOTER)
         return embed
 
-    # ─── >caixa ───
-    @commands.command(name="caixa")
-    async def caixa(self, ctx: commands.Context):
-        """abre a caixa comum: 150 diamantes = 3 axolotls do pool normal."""
+    # ─── >box ───
+    @commands.command(name="box", aliases=["caixa"])
+    async def box(self, ctx: commands.Context):
+        """abre a box comum: 150 diamantes = 3 axolotls do pool normal."""
         itens = await _pagar_e_sortear(ctx.author.id, False)
         if itens is None:
             dima, _, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
@@ -684,12 +751,13 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.DIAMANTE} {ctx.author.display_name} abriu a caixa!"
+        bonus = await _bonus_caixa(ctx.author.id, False)
         msg = await ctx.send(embed=self._embed_parcial(titulo, itens, 0))
-        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, False))
+        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, False), bonus)
 
-    @app_commands.command(name="caixa", description="abre a caixa comum: 150 diamantes = 3 axolotls.")
-    async def caixa_slash(self, interaction: discord.Interaction):
-        """versão slash do >caixa."""
+    @app_commands.command(name="box", description="abre a box comum: 150 diamantes = 3 axolotls.")
+    async def box_slash(self, interaction: discord.Interaction):
+        """versão slash do >box."""
         itens = await _pagar_e_sortear(interaction.user.id, False)
         if itens is None:
             await interaction.response.send_message(
@@ -698,12 +766,14 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.DIAMANTE} você abriu a caixa!"
+        bonus = await _bonus_caixa(interaction.user.id, False)
         await interaction.response.send_message(embed=self._embed_parcial(titulo, itens, 0))
         await _animar_caixa(
             interaction.edit_original_response,
             titulo,
             itens,
             CaixaView(interaction.user.id, False),
+            bonus,
         )
 
     # ─── >caixarara ───
@@ -719,8 +789,9 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.AMETHYST} {ctx.author.display_name} abriu a caixa rara!"
+        bonus = await _bonus_caixa(ctx.author.id, True)
         msg = await ctx.send(embed=self._embed_parcial(titulo, itens, 0))
-        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, True))
+        await _animar_caixa(msg.edit, titulo, itens, CaixaView(ctx.author.id, True), bonus)
 
     @app_commands.command(name="caixarara", description="abre a caixa rara: 15 ametista = 3 axolotls raros.")
     async def caixarara_slash(self, interaction: discord.Interaction):
@@ -733,12 +804,14 @@ class Economia(commands.Cog, name="Economia"):
             )
             return
         titulo = f"{visual.AMETHYST} você abriu a caixa rara!"
+        bonus = await _bonus_caixa(interaction.user.id, True)
         await interaction.response.send_message(embed=self._embed_parcial(titulo, itens, 0))
         await _animar_caixa(
             interaction.edit_original_response,
             titulo,
             itens,
             CaixaView(interaction.user.id, True),
+            bonus,
         )
 
     # ─── >colecao ───

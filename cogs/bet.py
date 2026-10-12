@@ -241,7 +241,7 @@ def _embed_bet(barra: str) -> discord.Embed:
         name="⛏️ mines",
         value=(
             f"`{barra}mines <dima|amet> <1-1000> [minas 1-15]`\n"
-            "25 pedras, N bombas. cada 💎 aumenta o multi, 💣 perde tudo. clica num 💎 aberto pra retirar."
+            "20 pedras, N bombas. cada 💎 aumenta o multi, 💣 perde tudo. retire quando quiser."
         ),
         inline=False,
     )
@@ -251,8 +251,8 @@ def _embed_bet(barra: str) -> discord.Embed:
 
 # ─── mines ───
 
-MINAS_TOTAL = 25  # 5x5. sem fileira do retirar: 💎 aberto saca.
-MINAS_MIN, MINAS_MAX, MINAS_PADRAO = 1, 20, 5
+MINAS_TOTAL = 20  # 5x4 + retirar (limite do discord: 25 por msg).
+MINAS_MIN, MINAS_MAX, MINAS_PADRAO = 1, 15, 3
 
 # dono_id -> {moeda, valor, minas:set, abertos:set, view}.
 # 1 jogo por pessoa: comecar outro reembolsa o anterior.
@@ -278,7 +278,7 @@ def _embed_mines(jogo: dict, fim: str = "") -> discord.Embed:
         description=desc,
         color=visual.PRIMARY,
     )
-    embed.set_footer(text="clica num 💎 aberto pra retirar • 5min sem jogar encerra • " + visual.FOOTER)
+    embed.set_footer(text="retire quando quiser • 5min sem jogar encerra • " + visual.FOOTER)
     return embed
 
 
@@ -286,6 +286,9 @@ def _pintar_mines(view: discord.ui.View, jogo: dict, revelar_tudo: bool = False)
     """atualiza os botoes: 💎 aberto, 💣 bomba, ⬜ fechado."""
     for b in view.children:
         cid = b.custom_id or ""
+        if cid == "mines:sacar":
+            b.disabled = revelar_tudo
+            continue
         idx = int(cid.split(":")[1])
         if idx in jogo["abertos"]:
             bomba = idx in jogo["minas"]
@@ -388,7 +391,7 @@ async def _sacar_jogo(dono_id: int, interaction: discord.Interaction, auto: bool
 
 
 class MinesView(discord.ui.View):
-    """grid 5x5. so o dono clica. expira em 5min."""
+    """grid 24 pedras + retirar. so o dono clica. expira em 5min."""
 
     def __init__(self, dono_id: int):
         super().__init__(timeout=300)
@@ -402,12 +405,29 @@ class MinesView(discord.ui.View):
             )
             b.callback = self._fabrica(i)
             self.add_item(b)
+        sacar = discord.ui.Button(
+            label="retirar",
+            emoji="💰",
+            style=discord.ButtonStyle.success,
+            custom_id="mines:sacar",
+            row=4,
+        )
+        sacar.callback = self._sacar
+        self.add_item(sacar)
 
     def _fabrica(self, idx: int):
         async def cavar(interaction: discord.Interaction):
             await _cavar(interaction, self.dono_id, idx)
 
         return cavar
+
+    async def _sacar(self, interaction: discord.Interaction):
+        if interaction.user.id != self.dono_id:
+            await interaction.response.send_message(
+                "esse jogo não é seu!", ephemeral=True
+            )
+            return
+        await _sacar_jogo(self.dono_id, interaction)
 
     async def on_timeout(self):
         JOGOS_MINES.pop(self.dono_id, None)
@@ -619,7 +639,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
     @app_commands.describe(
         moeda="qual moeda apostar",
         valor="quanto apostar (1-1000)",
-        minas="quantas bombas (1-20)",
+        minas="quantas bombas (1-15)",
     )
     @app_commands.choices(
         moeda=[
@@ -632,7 +652,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         interaction: discord.Interaction,
         moeda: str,
         valor: app_commands.Range[int, 1, 1000],
-        minas: app_commands.Range[int, 1, 20] = 5,
+        minas: app_commands.Range[int, 1, 15] = 3,
     ):
         """versão slash do >mines."""
         tinha = interaction.user.id in JOGOS_MINES

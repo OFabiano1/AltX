@@ -186,7 +186,7 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
         AXOLOTLS.get(ALIAS_AXOLOTL.get(a, a), {}).get("rar") == "lendário"
         for a, _ in colecao
     )
-    snap = {
+    snap_conq = {
         "nivel": nivel,
         "vinculado": steam is not None,
         "dima": dima,
@@ -202,7 +202,7 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     }
     ja = set(await asyncio.to_thread(data.conquistas_usuario, membro.id))
     novas = []
-    for cid in conquistas.avaliar(snap):
+    for cid in conquistas.avaliar(snap_conq):
         if cid not in ja and await asyncio.to_thread(
             data.dar_conquista, membro.id, cid, hoje
         ):
@@ -216,11 +216,18 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     )
 
     daily = "já resgatado" if ultimo_daily == hoje else "disponível!"
+    nomes_buff = {"xp2": "2x xp", "dima2": "2x dima"}
+    linha_buff = " · ".join(
+        f"**{nomes_buff.get(t, t)}** ({s // 60}min)" if s >= 60 else f"**{nomes_buff.get(t, t)}** ({s}s)"
+        for t, s in snap["buffs"].items()
+        if s > 0
+    )
     embed.add_field(
         name="💎 economia",
         value=f"{visual.DIAMANTE} {dima} · {visual.AMETHYST} {amet} · 🍬 {doces}"
         + (f" · aura {aura}" if aura else "")
-        + f"\ndaily: {daily}",
+        + f"\ndaily: {daily}"
+        + (f"\n⚡ {linha_buff}" if linha_buff else ""),
         inline=False,
     )
 
@@ -249,18 +256,18 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     arquivo = None
     try:
         destaques = [conquistas.CONQUISTAS[c]["nome"] for c in novas[:3]]
-        moedas = f"{dima} dima - {amet} amet - {doces} doces"
         png = await asyncio.wait_for(
             asyncio.to_thread(
                 player_card.render_player,
-                membro.display_name,
                 nivel,
                 xp,
                 xp_prox,
                 len(desbloq),
                 len(conquistas.CONQUISTAS),
                 destaques,
-                moedas,
+                dima,
+                amet,
+                doces,
             ),
             timeout=10,
         )
