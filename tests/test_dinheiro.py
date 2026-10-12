@@ -105,25 +105,13 @@ def test_snapshot_tem_tudo(banco):
     assert "buffs" in s and "steam" in s
 
 
-def test_posicao_e_recentes(banco):
+def test_posicao(banco):
     assert banco.posicao_xp(99) is None
     banco.ganhar_xp(1, 500)
     banco.ganhar_xp(2, 100)
     assert banco.posicao_xp(1) == 1
     assert banco.posicao_xp(2) == 2
-    banco.dar_conquista(1, "nivel2", "x")
-    banco.dar_conquista(1, "mil_dima", "x")
-    assert banco.conquistas_recentes(1) == ["mil_dima", "nivel2"]
     assert banco.snapshot(1, "2099-01-01")["pos"] == 1
-
-
-def test_reset_conquistas(banco):
-    banco.dar_conquista(1, "nivel5", "x")
-    banco.dar_conquista(2, "nivel5", "x")
-    assert banco.resetar_conquistas(1) == 1
-    assert banco.conquistas_usuario(1) == []
-    assert banco.resetar_conquistas() == 1
-    assert banco.conquistas_usuario(2) == []
 
 
 def test_cortar_diamantes(banco):
@@ -133,22 +121,6 @@ def test_cortar_diamantes(banco):
     assert (afetados, antes, depois) == (2, 151, 75)
     assert banco.buscar_saldo(1)[0] == 50
     assert banco.buscar_saldo(2)[0] == 25
-
-
-def test_conquistas_avaliar():
-    from conquistas import avaliar, CONQUISTAS
-
-    zero = {"nivel": 1}
-    assert avaliar(zero) == []
-    full = {
-        "nivel": 10, "vinculado": True, "dima": 5000, "doces": 500,
-        "tem_raro": True, "tem_lendario": True, "full": True,
-        "apostas": 50, "vitorias": 20, "streak": 30,
-        "feitas_hoje": 3, "ptp_total": 200, "daily_vez": True,
-    }
-    assert avaliar(full) == list(CONQUISTAS)
-    assert avaliar({"nivel": 1, "ptp_total": 100}) == ["maratona_ptp"]
-    assert avaliar({"nivel": 1, "daily_vez": True}) == ["primeiro_daily"]
 
 
 def test_slots_puro():

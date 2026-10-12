@@ -8,7 +8,7 @@ o bot oficial da **axolotl br** — sua comunidade na internet. de player pra pl
 |---|---|
 | geral | `>axolotl` `>ping` `/ping` `>ajuda` + oi do dia (saudação 1x/dia por pessoa) |
 | voz | `>call` `>sair` `>oi` (oi automático por pessoa) |
-| servidor | `>server` (hub) `>player` (`>perfil` ainda vale) `>conquistas` (14) + push do github no chat |
+| servidor | `>server` (hub) `>player` (`>perfil` ainda vale) + push do github no chat |
 | níveis | `>xp` `>ranking` |
 | jogos | `>ptp` (sem arg = hub com placar + top 5) `>placar` `>rankingptp` |
 | economia | `>saldo` `>daily` (100 dima + 2 amet) `>pay` `>loja` (auras/doces/caixas) `>buy` `>equipar` (`>aura` vale) `>auras` `>roll` (5 amet) `>colecao` (18 espécies) `>topdima` `>box` (150 dima, alias `>caixa`) `>caixarara` (15 amet) |

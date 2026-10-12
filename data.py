@@ -144,13 +144,6 @@ CREATE TABLE IF NOT EXISTS bet_stats (
     vitorias INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS conquistas (
-    user_id      INTEGER NOT NULL,
-    conquista_id TEXT NOT NULL,
-    quando       TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (user_id, conquista_id)
-);
-
 CREATE TABLE IF NOT EXISTS buffs (
     user_id   INTEGER NOT NULL,
     tipo      TEXT NOT NULL,
@@ -871,28 +864,6 @@ def buscar_bet(user_id: int) -> tuple[int, int]:
     return (row["apostas"], row["vitorias"]) if row else (0, 0)
 
 
-# ─── conquistas ───
-def tem_conquista(user_id: int, conquista_id: str) -> bool:
-    with _conectar() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM conquistas WHERE user_id = ? AND conquista_id = ?",
-            (user_id, conquista_id),
-        ).fetchone()
-    return row is not None
-
-
-def dar_conquista(user_id: int, conquista_id: str, quando: str = "") -> bool:
-    """desbloqueia. True se foi agora (novo)."""
-    with _lock, _conectar() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        cur = conn.execute(
-            "INSERT OR IGNORE INTO conquistas (user_id, conquista_id, quando) "
-            "VALUES (?, ?, ?)",
-            (user_id, conquista_id, quando),
-        )
-        return cur.rowcount > 0
-
-
 def posicao_xp(user_id: int) -> int | None:
     """posicao no ranking (1 = top). None se sem xp."""
     with _conectar() as conn:
@@ -906,30 +877,6 @@ def posicao_xp(user_id: int) -> int | None:
             (row["nivel"], row["nivel"], row["xp"]),
         ).fetchone()[0]
         return n + 1
-
-
-def conquistas_recentes(user_id: int, limite: int = 3) -> list[str]:
-    """ultimas desbloqueadas (mais nova primeiro)."""
-    with _conectar() as conn:
-        rows = conn.execute(
-            "SELECT conquista_id FROM conquistas WHERE user_id = ? "
-            "ORDER BY rowid DESC LIMIT ?",
-            (user_id, limite),
-        ).fetchall()
-    return [r["conquista_id"] for r in rows]
-
-
-def resetar_conquistas(user_id: int | None = None) -> int:
-    """apaga conquistas: de 1 membro ou de todo mundo. retorna qtas sairam."""
-    with _lock, _conectar() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        if user_id is None:
-            cur = conn.execute("DELETE FROM conquistas")
-        else:
-            cur = conn.execute(
-                "DELETE FROM conquistas WHERE user_id = ?", (user_id,)
-            )
-        return cur.rowcount
 
 
 def cortar_diamantes() -> tuple[int, int, int]:
@@ -947,14 +894,6 @@ def cortar_diamantes() -> tuple[int, int, int]:
             conn.execute("SELECT COALESCE(SUM(diamantes), 0) FROM economia").fetchone()[0]
         )
         return cur.rowcount, antes, depois
-
-
-def conquistas_usuario(user_id: int) -> list[str]:
-    with _conectar() as conn:
-        rows = conn.execute(
-            "SELECT conquista_id FROM conquistas WHERE user_id = ?", (user_id,)
-        ).fetchall()
-    return [r["conquista_id"] for r in rows]
 
 
 # ─── buffs 2x (xp2, dima2: multiplica o ganho por msg) ───
@@ -1189,15 +1128,6 @@ def snapshot(user_id: int, hoje: str) -> dict:
             if tem_xp
             else None
         )
-        recentes = [
-            x["conquista_id"]
-            for x in conn.execute(
-                "SELECT conquista_id FROM conquistas WHERE user_id = ? "
-                "ORDER BY rowid DESC LIMIT 3",
-                (user_id,),
-            ).fetchall()
-        ]
-
     return {
         "xp": xp,
         "nivel": nivel,
@@ -1215,7 +1145,6 @@ def snapshot(user_id: int, hoje: str) -> dict:
         "steam": steam,
         "buffs": buffs,
         "pos": pos,
-        "recentes": recentes,
     }
 
 
@@ -1324,4 +1253,6 @@ def init() -> None:
         # em vez de repetir em toda conexao (toda msg de xp).
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        # conquistas desativadas: limpa a tabela onde existir (vale no deploy).
+        conn.execute("DROP TABLE IF EXISTS conquistas")
     migrar_xp_legado()

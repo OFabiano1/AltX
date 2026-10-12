@@ -11,9 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-import conquistas
 import data
-import deadlock_api
 import player_card
 import visual
 
@@ -93,12 +91,12 @@ class Servidor(commands.Cog, name="Servidor"):
     # ─── >player ───
     @commands.command(name="player", aliases=["perfil"])
     async def player(self, ctx: commands.Context, membro: discord.Member = None):
-        """veja o player: xp, economia e conquistas."""
+        """veja o player: xp, economia e card."""
         embed, arquivo = await _montar_perfil(membro or ctx.author)
         await ctx.send(embed=embed, file=arquivo)
 
     # ─── /player ───
-    @app_commands.command(name="player", description="veja o player: xp, economia e conquistas.")
+    @app_commands.command(name="player", description="veja o player: xp, economia e card.")
     @app_commands.describe(membro="ver o player de outro membro (opcional)")
     async def player_slash(
         self, interaction: discord.Interaction, membro: discord.Member | None = None
@@ -110,73 +108,6 @@ class Servidor(commands.Cog, name="Servidor"):
         )
         await interaction.followup.send(embed=embed, file=arquivo)
 
-    # ─── >conquistas ───
-    @commands.command(name="conquistas")
-    async def conquistas_cmd(self, ctx: commands.Context, membro: discord.Member = None):
-        """lista todas as conquistas e as suas desbloqueadas."""
-        membro = membro or ctx.author
-        minhas = set(await asyncio.to_thread(data.conquistas_usuario, membro.id))
-        linhas = []
-        for cid, info in conquistas.CONQUISTAS.items():
-            marca = "✅" if cid in minhas else "⬜"
-            linhas.append(f"{marca} {info['icone']} **{info['nome']}** — {info['desc']}")
-        embed = discord.Embed(
-            title=f"🏆 conquistas de {membro.display_name} ({len(minhas)}/{len(conquistas.CONQUISTAS)})",
-            description="\n".join(linhas),
-            color=visual.PRIMARY,
-        )
-        embed.set_footer(text=visual.FOOTER)
-        await ctx.send(embed=embed)
-
-    # ─── /conquistas ───
-    @app_commands.command(name="conquistas", description="lista todas as conquistas.")
-    @app_commands.describe(membro="ver as conquistas de outro membro (opcional)")
-    async def conquistas_slash(
-        self, interaction: discord.Interaction, membro: discord.Member | None = None
-    ):
-        """versão slash do >conquistas."""
-        membro = membro or interaction.user
-        minhas = set(
-            await asyncio.to_thread(data.conquistas_usuario, membro.id)  # type: ignore[attr-defined]
-        )
-        linhas = []
-        for cid, info in conquistas.CONQUISTAS.items():
-            marca = "✅" if cid in minhas else "⬜"
-            linhas.append(f"{marca} {info['icone']} **{info['nome']}** — {info['desc']}")
-        embed = discord.Embed(
-            title=f"🏆 conquistas de {membro.display_name} ({len(minhas)}/{len(conquistas.CONQUISTAS)})",
-            description="\n".join(linhas),
-            color=visual.PRIMARY,
-        )
-        embed.set_footer(text=visual.FOOTER)
-        await interaction.response.send_message(embed=embed)
-
-    # ─── >resetconq ───
-    @commands.command(name="resetconq")
-    @commands.has_permissions(administrator=True)
-    async def resetconq(self, ctx: commands.Context, membro: discord.Member = None):
-        """[admin] zera conquistas: de 1 membro ou de todo mundo."""
-        n = await asyncio.to_thread(data.resetar_conquistas, membro.id if membro else None)
-        alvo = membro.mention if membro else "todo mundo"
-        await ctx.send(f"🏆 conquistas de {alvo} zeradas! ({n} saíram)")
-
-    # ─── /resetconq ───
-    @app_commands.command(name="resetconq", description="[admin] zera conquistas.")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(membro="só as dele (vazio = todo mundo)")
-    async def resetconq_slash(
-        self, interaction: discord.Interaction, membro: discord.Member | None = None
-    ):
-        """versão slash do >resetconq."""
-        n = await asyncio.to_thread(
-            data.resetar_conquistas, membro.id if membro else None  # type: ignore[attr-defined]
-        )
-        alvo = membro.mention if membro else "todo mundo"
-        await interaction.response.send_message(
-            f"🏆 conquistas de {alvo} zeradas! ({n} saíram)"
-        )
-
-
 BARRA_CHEIA = "█"
 BARRA_VAZIA = "░"
 BARRA_CELULAS = 10
@@ -186,8 +117,8 @@ TZ = datetime.timezone(datetime.timedelta(hours=-3))
 
 
 async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord.File | None]:
-    """player: xp + economia + conquistas + card. sem deadlock, colecao e jogos."""
-    from cogs.economia import AXOLOTLS, ALIAS_AXOLOTL
+    """player: xp + economia + card. sem deadlock, colecao e jogos."""
+    from cogs.economia import AXOLOTLS
 
     hoje = datetime.datetime.now(TZ).date().isoformat()
     # tudo numa conexao so: abre rapidin.
@@ -195,44 +126,13 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     xp, nivel = snap["xp"], snap["nivel"]
     dima, amet, aura = snap["dima"], snap["amet"], snap["aura"]
     colecao = snap["colecao"]
-    nap, nvit = snap["apostas"], snap["vitorias"]
     doces = snap["doces"]
     ultimo_daily = snap["daily"]
     feitas = snap["feitas"]
     sdias = snap["streak"]
-    pv, pd, pe = snap["ptp"]
-    steam = snap["steam"]
     xp_prox = data.xp_para_proximo(nivel)
     celulas = int((xp / xp_prox) * BARRA_CELULAS)
     progresso = BARRA_CHEIA * celulas + BARRA_VAZIA * (BARRA_CELULAS - celulas)
-
-    # conquistas: avalia o snapshot e desbloqueia o que bateu.
-    rars = {
-        AXOLOTLS.get(ALIAS_AXOLOTL.get(a, a), {}).get("rar") for a, _ in colecao
-    }
-    snap_conq = {
-        "nivel": nivel,
-        "vinculado": steam is not None,
-        "dima": dima,
-        "doces": doces,
-        "tem_raro": not rars.isdisjoint({"raro", "épico", "lendário"}),
-        "tem_lendario": "lendário" in rars,
-        "full": len(colecao) >= len(AXOLOTLS),
-        "apostas": nap,
-        "vitorias": nvit,
-        "streak": sdias,
-        "feitas_hoje": len(feitas),
-        "ptp_total": pv + pd + pe,
-        "daily_vez": ultimo_daily is not None,
-    }
-    ja = set(await asyncio.to_thread(data.conquistas_usuario, membro.id))
-    novas = []
-    for cid in conquistas.avaliar(snap_conq):
-        if cid not in ja and await asyncio.to_thread(
-            data.dar_conquista, membro.id, cid, hoje
-        ):
-            novas.append(cid)
-    desbloq = [c for c in conquistas.CONQUISTAS if c in ja or c in novas]
 
     embed = discord.Embed(
         title=f"👤 player {membro.display_name}",
@@ -256,18 +156,6 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
         inline=False,
     )
 
-    if desbloq:
-        valor_conq = "\n".join(conquistas.linha(c) for c in desbloq)
-    else:
-        valor_conq = "nenhuma ainda — joga pra desbloquear!"
-    if novas:
-        valor_conq += "\n\n🎉 novas: " + ", ".join(conquistas.linha(c) for c in novas)
-    embed.add_field(
-        name=f"🏆 conquistas ({len(desbloq)}/{len(conquistas.CONQUISTAS)})",
-        value=valor_conq,
-        inline=False,
-    )
-
     # servidor: so faz sentido dentro do servidor.
     if isinstance(membro, discord.Member) and membro.joined_at is not None:
         entrou = membro.joined_at.strftime("%d/%m/%Y")
@@ -280,29 +168,21 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     # card com imagem. se falhar, o texto segue sozinho.
     arquivo = None
     try:
-        nomes_recentes = [conquistas.CONQUISTAS[c]["nome"] for c in snap["recentes"]]
-        perfil_card = {
-            "user_id": membro.id,
-            "nome": membro.display_name,
-            "avatar_url": getattr(membro.display_avatar, "url", None),
-            "nivel": nivel,
-            "pos": snap["pos"],
-            "xp": xp,
-            "xp_prox": xp_prox,
-            "n_conq": len(desbloq),
-            "total_conq": len(conquistas.CONQUISTAS),
-            "recentes": [conquistas.CONQUISTAS[c]["nome"] for c in novas[:3]]
-            or nomes_recentes,
-            "dima": dima,
-            "amet": amet,
-            "doces": doces,
-            "streak": sdias,
-            "feitas_hoje": len(feitas),
-            "especies": len(colecao),
-            "total_especies": len(AXOLOTLS),
-        }
         png = await asyncio.wait_for(
-            asyncio.to_thread(player_card.render_player, perfil_card),
+            asyncio.to_thread(
+                player_card.render_player,
+                nivel,
+                snap["pos"],
+                xp,
+                xp_prox,
+                dima,
+                amet,
+                doces,
+                sdias,
+                len(feitas),
+                len(colecao),
+                len(AXOLOTLS),
+            ),
             timeout=15,
         )
         arquivo = discord.File(io.BytesIO(png), filename="player.png")
