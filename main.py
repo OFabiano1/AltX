@@ -31,6 +31,7 @@ COGS = (
     "cogs.server",
     "cogs.github",
     "cogs.daily",
+    "cogs.bet",
 )
 
 # so liga o minimo: sem `guild_messages` o `>` nem chega,
@@ -172,6 +173,7 @@ ORDEM_AJUDA = (
     "Servidor",
     "jogos",
     "Economia",
+    "Axolotl Bet",
     "tickets",
     "Mudae",
     "Halloween",
@@ -200,6 +202,7 @@ CATEGORIA_EMOJIS = {
     "Servidor": "🖥️",
     "Jogos": "🎲",
     "Economia": "💎",
+    "Axolotl Bet": "🎰",
     "Tickets": "🎟️",
     "Mudae": "🃏",
     "Halloween": "🎃",

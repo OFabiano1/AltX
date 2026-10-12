@@ -108,6 +108,7 @@ CATEGORIAS = {
     "tickets":   "Tickets",
     "Status":    "Status",
     "Economia":  "Economia",
+    "Axolotl Bet": "Axolotl Bet",
     "Mudae":     "Mudae",
     "Halloween": "Halloween",
     "Deadlock":  "Deadlock",
