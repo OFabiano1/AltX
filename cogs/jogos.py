@@ -114,10 +114,46 @@ class Jogos(commands.Cog, name="jogos"):
         embed.set_footer(text=f"seu placar: {v}V {d}D {e}E{extra}  •  use >placar • {visual.FOOTER}")
         return embed
 
+    @staticmethod
+    async def _embed_hub(guild, autor) -> discord.Embed:
+        """hub do ptp: teu placar + top 5 + como jogar."""
+        v, d, e = await asyncio.to_thread(data.buscar_ptp, autor.id)
+        ranking = await asyncio.to_thread(data.top_ptp, 5)
+        embed = discord.Embed(
+            title="✊ pedra, tesoura e papel",
+            description=(
+                "`>ptp pedra` · `>ptp tesoura` · `>ptp papel`\n"
+                f"vitória = +{PTP_DIAMANTES['vitoria']} {visual.DIAMANTE}, "
+                f"empate = +{PTP_DIAMANTES['empate']} {visual.DIAMANTE}."
+            ),
+            color=visual.PRIMARY,
+        )
+        if v + d + e:
+            total = v + d + e
+            embed.add_field(
+                name="seu placar",
+                value=f"**{v}**V **{d}**D **{e}**E · {round(v / total * 100)}%",
+                inline=False,
+            )
+        else:
+            embed.add_field(name="seu placar", value="sem jogada ainda!", inline=False)
+        if ranking:
+            linhas = []
+            for i, (uid, rv, rd, re_) in enumerate(ranking):
+                membro = guild.get_member(uid) if guild else None
+                nome = membro.display_name if membro else f"usuário {uid}"
+                linhas.append(f"{MEDALHAS[i]} **{nome}** — {rv}V {rd}D {re_}E")
+            embed.add_field(name="top 5", value="\n".join(linhas), inline=False)
+        embed.set_footer(text=visual.FOOTER)
+        return embed
+
     # ─── >ptp ───
     @commands.command(name="ptp")
     async def ptp_prefix(self, ctx: commands.Context, escolha: str | None = None):
-        """joga Pedra, Tesoura e Papel contra o Axolotl."""
+        """joga ptp (`>ptp pedra`) ou abre o hub sem argumento."""
+        if escolha is None:
+            await ctx.send(embed=await self._embed_hub(ctx.guild, ctx.author))
+            return
         dados = self._resolver(escolha, ctx.author)
         if dados is None:
             await ctx.send(

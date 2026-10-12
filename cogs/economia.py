@@ -333,7 +333,7 @@ def _secoes_loja(
                 "Auras",
                 "poder passivo pro teu perfil.\n\n" + "\n\n".join(linhas_auras),
                 saldo,
-                f"{barra}buy <id> compra aura • {barra}aura <id> equipa",
+                f"{barra}buy <id> compra aura • {barra}equipar <id>",
             ),
         ),
         (
@@ -577,7 +577,7 @@ class Economia(commands.Cog, name="Economia"):
             return
         aura_id = item_id
         if await asyncio.to_thread(data.tem_aura, ctx.author.id, aura_id):
-            await ctx.send(f"{visual.AXOLOTL} você já tem essa aura! use `>aura {aura_id}` pra equipar.")
+            await ctx.send(f"{visual.AXOLOTL} você já tem essa aura! use `>equipar {aura_id}`.")
             return
         _, amet, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
         preco = AURAS[aura_id]["preco"]
@@ -617,12 +617,12 @@ class Economia(commands.Cog, name="Economia"):
         msg = await self._trocar_doces(ctx.author.id, item_id)
         await ctx.send(f"{visual.AXOLOTL} {ctx.author.mention} {msg}")
 
-    # ─── >aura / >auras ───
-    @commands.command(name="aura")
-    async def aura(self, ctx: commands.Context, aura_id: str = None):
-        """equipa uma aura que você já tem. ex: `>aura brisa`."""
+    # ─── >equipar / >auras ───
+    @commands.command(name="equipar", aliases=["aura"])
+    async def equipar(self, ctx: commands.Context, aura_id: str = None):
+        """equipa uma aura que você já tem. ex: `>equipar brisa`."""
         if aura_id is None:
-            await ctx.send(f"{visual.AXOLOTL} uso: `>aura <id>` — veja as suas com `>auras`.")
+            await ctx.send(f"{visual.AXOLOTL} uso: `>equipar <id>` — veja as suas com `>auras`.")
             return
         aura_id = aura_id.lower()
         if aura_id not in AURAS:
@@ -956,7 +956,7 @@ class Economia(commands.Cog, name="Economia"):
             return
         if await asyncio.to_thread(data.tem_aura, user_id, aura_id):
             await interaction.response.send_message(
-                f"{visual.AXOLOTL} você já tem essa aura! equipe com `/aura`.",
+                f"{visual.AXOLOTL} você já tem essa aura! equipe com `/equipar`.",
                 ephemeral=True,
             )
             return
@@ -975,12 +975,12 @@ class Economia(commands.Cog, name="Economia"):
             f"{visual.AXOLOTL} você comprou e equipou **{AURAS[aura_id]['nome']}**!"
         )
 
-    # ─── /aura ───
-    @app_commands.command(name="aura", description="equipa uma aura que você já tem.")
+    # ─── /equipar ───
+    @app_commands.command(name="equipar", description="equipa uma aura que você já tem.")
     @app_commands.describe(aura_id="qual aura equipar")
     @app_commands.choices(aura_id=_ESCOLHAS_AURA)
-    async def aura_slash(self, interaction: discord.Interaction, aura_id: str):
-        """versão slash do >aura."""
+    async def equipar_slash(self, interaction: discord.Interaction, aura_id: str):
+        """versão slash do >equipar."""
         user_id = interaction.user.id
         if not await asyncio.to_thread(data.tem_aura, user_id, aura_id):
             await interaction.response.send_message(

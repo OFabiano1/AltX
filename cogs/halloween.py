@@ -174,16 +174,35 @@ class Halloween(commands.Cog, name="Halloween"):
             data.ganhar_doces, message.author.id, random.randint(DOCE_MIN, DOCE_MAX)
         )
 
+    @staticmethod
+    async def _top_doces_linhas(guild) -> list[str]:
+        """top 5 pronto. guild None = sem nomes (só ids)."""
+        ranking = await asyncio.to_thread(data.top_doces, 5)
+        linhas = []
+        for i, (user_id, doces) in enumerate(ranking, start=1):
+            membro = guild.get_member(user_id) if guild else None
+            nome = membro.display_name if membro else f"Usuário {user_id}"
+            linhas.append(f"**{i}.** {nome} — **{doces}** 🍬")
+        return linhas
+
     # ─── >doces ───
     @commands.command(name="doces")
     async def doces(self, ctx: commands.Context, membro: discord.Member = None):
-        """veja seus doces de halloween 🍬."""
+        """veja os doces + top 5 de halloween 🍬."""
         membro = membro or ctx.author
         total = await asyncio.to_thread(data.buscar_doces, membro.id)
-        await ctx.send(f"🍬 {membro.display_name} tem **{total}** doces!")
+        embed = discord.Embed(
+            title=f"🍬 {membro.display_name} tem **{total}** doces!",
+            color=visual.PRIMARY,
+        )
+        linhas = await self._top_doces_linhas(ctx.guild)
+        if linhas:
+            embed.add_field(name="top 5", value="\n".join(linhas), inline=False)
+        embed.set_footer(text=visual.FOOTER)
+        await ctx.send(embed=embed)
 
     # ─── /doces ───
-    @app_commands.command(name="doces", description="veja seus doces de halloween 🍬.")
+    @app_commands.command(name="doces", description="veja os doces + top 5 de halloween 🍬.")
     @app_commands.describe(membro="ver os doces de outro membro (opcional)")
     async def doces_slash(
         self, interaction: discord.Interaction, membro: discord.Member | None = None
@@ -191,23 +210,24 @@ class Halloween(commands.Cog, name="Halloween"):
         """versão slash do >doces."""
         membro = membro or interaction.user
         total = await asyncio.to_thread(data.buscar_doces, membro.id)
-        await interaction.response.send_message(
-            f"🍬 {membro.display_name} tem **{total}** doces!"
+        embed = discord.Embed(
+            title=f"🍬 {membro.display_name} tem **{total}** doces!",
+            color=visual.PRIMARY,
         )
+        linhas = await self._top_doces_linhas(interaction.guild)
+        if linhas:
+            embed.add_field(name="top 5", value="\n".join(linhas), inline=False)
+        embed.set_footer(text=visual.FOOTER)
+        await interaction.response.send_message(embed=embed)
 
     # ─── >topdoces ───
     @commands.command(name="topdoces")
     async def topdoces(self, ctx: commands.Context):
-        """ranking dos top 5 colecionadores de doces."""
-        ranking = await asyncio.to_thread(data.top_doces, 5)
-        if not ranking:
+        """atalho: mesmo top 5 do >doces."""
+        linhas = await self._top_doces_linhas(ctx.guild)
+        if not linhas:
             await ctx.send("🍬 ninguém pegou doce ainda! Mandem msg no chat!")
             return
-        linhas = []
-        for i, (user_id, doces) in enumerate(ranking, start=1):
-            membro = ctx.guild.get_member(user_id)
-            nome = membro.display_name if membro else f"Usuário {user_id}"
-            linhas.append(f"**{i}.** {nome} — **{doces}** 🍬")
         embed = discord.Embed(
             title="🍬 Top 5 — Doces de Halloween",
             description="\n".join(linhas),
@@ -217,20 +237,15 @@ class Halloween(commands.Cog, name="Halloween"):
         await ctx.send(embed=embed)
 
     # ─── /topdoces ───
-    @app_commands.command(name="topdoces", description="ranking dos top 5 colecionadores de doces.")
+    @app_commands.command(name="topdoces", description="atalho: mesmo top 5 do /doces.")
     async def topdoces_slash(self, interaction: discord.Interaction):
         """versão slash do >topdoces."""
-        ranking = await asyncio.to_thread(data.top_doces, 5)
-        if not ranking:
+        linhas = await self._top_doces_linhas(interaction.guild)
+        if not linhas:
             await interaction.response.send_message(
                 "🍬 ninguém pegou doce ainda! Mandem msg no chat!", ephemeral=True
             )
             return
-        linhas = []
-        for i, (user_id, doces) in enumerate(ranking, start=1):
-            membro = interaction.guild.get_member(user_id) if interaction.guild else None
-            nome = membro.display_name if membro else f"Usuário {user_id}"
-            linhas.append(f"**{i}.** {nome} — **{doces}** 🍬")
         embed = discord.Embed(
             title="🍬 Top 5 — Doces de Halloween",
             description="\n".join(linhas),

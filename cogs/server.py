@@ -182,23 +182,23 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     progresso = BARRA_CHEIA * celulas + BARRA_VAZIA * (BARRA_CELULAS - celulas)
 
     # conquistas: avalia o snapshot e desbloqueia o que bateu.
-    tem_lendario = any(
-        AXOLOTLS.get(ALIAS_AXOLOTL.get(a, a), {}).get("rar") == "lendário"
-        for a, _ in colecao
-    )
+    rars = {
+        AXOLOTLS.get(ALIAS_AXOLOTL.get(a, a), {}).get("rar") for a, _ in colecao
+    }
     snap_conq = {
         "nivel": nivel,
         "vinculado": steam is not None,
         "dima": dima,
-        "amet": amet,
         "doces": doces,
-        "especies": len(colecao),
-        "tem_lendario": tem_lendario,
+        "tem_raro": not rars.isdisjoint({"raro", "épico", "lendário"}),
+        "tem_lendario": "lendário" in rars,
+        "full": len(colecao) >= len(AXOLOTLS),
         "apostas": nap,
         "vitorias": nvit,
         "streak": sdias,
         "feitas_hoje": len(feitas),
         "ptp_total": pv + pd + pe,
+        "daily_vez": ultimo_daily is not None,
     }
     ja = set(await asyncio.to_thread(data.conquistas_usuario, membro.id))
     novas = []
@@ -255,21 +255,30 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     # card com imagem. se falhar, o texto segue sozinho.
     arquivo = None
     try:
-        destaques = [conquistas.CONQUISTAS[c]["nome"] for c in novas[:3]]
+        nomes_recentes = [conquistas.CONQUISTAS[c]["nome"] for c in snap["recentes"]]
+        perfil_card = {
+            "user_id": membro.id,
+            "nome": membro.display_name,
+            "avatar_url": getattr(membro.display_avatar, "url", None),
+            "nivel": nivel,
+            "pos": snap["pos"],
+            "xp": xp,
+            "xp_prox": xp_prox,
+            "n_conq": len(desbloq),
+            "total_conq": len(conquistas.CONQUISTAS),
+            "recentes": [conquistas.CONQUISTAS[c]["nome"] for c in novas[:3]]
+            or nomes_recentes,
+            "dima": dima,
+            "amet": amet,
+            "doces": doces,
+            "streak": sdias,
+            "feitas_hoje": len(feitas),
+            "especies": len(colecao),
+            "total_especies": len(AXOLOTLS),
+        }
         png = await asyncio.wait_for(
-            asyncio.to_thread(
-                player_card.render_player,
-                nivel,
-                xp,
-                xp_prox,
-                len(desbloq),
-                len(conquistas.CONQUISTAS),
-                destaques,
-                dima,
-                amet,
-                doces,
-            ),
-            timeout=10,
+            asyncio.to_thread(player_card.render_player, perfil_card),
+            timeout=15,
         )
         arquivo = discord.File(io.BytesIO(png), filename="player.png")
         embed.set_image(url="attachment://player.png")

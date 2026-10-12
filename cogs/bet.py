@@ -53,19 +53,9 @@ def _parse_aposta(moeda_txt: str | None, valor_txt: str | None) -> tuple[str | N
     return moeda, valor
 
 
-async def _cobrar(user_id: int, moeda: str, valor: int) -> bool:
-    """tira a aposta. False se sem saldo."""
-    if moeda == "dima":
-        dima, _, _ = await asyncio.to_thread(data.buscar_saldo, user_id)
-        if dima < valor:
-            return False
-        await asyncio.to_thread(data.adicionar_diamantes, user_id, -valor)
-    else:
-        _, amet, _ = await asyncio.to_thread(data.buscar_saldo, user_id)
-        if amet < valor:
-            return False
-        await asyncio.to_thread(data.adicionar_ametista, user_id, -valor)
-    return True
+async def _cobrar(user_id: int, moeda: str, valor: int) -> tuple[bool, int]:
+    """tira a aposta numa transacao so. retorna (ok, saldo_atual)."""
+    return await asyncio.to_thread(data.debitar_moeda, user_id, moeda, valor)
 
 
 async def _sumir(msg, segundos: int = 15):
@@ -176,7 +166,8 @@ class BetView(discord.ui.View):
                 "só quem apostou usa esse botão!", ephemeral=True
             )
             return
-        if not await _cobrar(self.dono_id, self.moeda, self.valor):
+        ok, _saldo = await _cobrar(self.dono_id, self.moeda, self.valor)
+        if not ok:
             await interaction.response.send_message(
                 f"sem saldo! a aposta é **{self.valor}** {_moeda_emoji(self.moeda)}.",
                 ephemeral=True,
@@ -257,10 +248,7 @@ def _embed_bet(barra: str) -> discord.Embed:
 MINAS_TOTAL = 20  # 5x4 + retirar (limite do discord: 25 por msg).
 MINAS_MIN, MINAS_MAX, MINAS_PADRAO = 1, 15, 3
 
-JOGO_EXPIRADO = (
-    "esse jogo acabou! se foi restart, devolvi tua aposta. "
-    "abre outro com `>mines`."
-)
+JOGO_EXPIRADO = "jogo acabou! restart devolve a aposta."
 
 
 async def _reembolsar(user_id: int, jogo: dict) -> None:
@@ -319,7 +307,8 @@ async def _comecar_mines(user_id: int, moeda: str, valor: int, minas: int):
     velho = await asyncio.to_thread(data.remover_mines, user_id)
     if velho is not None:
         await _reembolsar(user_id, velho)
-    if not await _cobrar(user_id, moeda, valor):
+    ok, _saldo = await _cobrar(user_id, moeda, valor)
+    if not ok:
         return None
     await asyncio.to_thread(
         data.salvar_mines, user_id, moeda, valor, set(random.sample(range(MINAS_TOTAL), minas))
@@ -397,6 +386,8 @@ class MinesView(discord.ui.View):
     def __init__(self, dono_id: int):
         super().__init__(timeout=300)
         self.dono_id = dono_id
+        # msg com os botoes (anexada por quem cria): no timeout os botoes somem.
+        self.message = None
         for i in range(MINAS_TOTAL):
             b = discord.ui.Button(
                 label="⬜",
@@ -431,11 +422,16 @@ class MinesView(discord.ui.View):
         await _sacar_jogo(self.dono_id, interaction)
 
     async def on_timeout(self):
-        # 5min parado: devolve a aposta em vez de sumir com ela.
+        # 5min parado: devolve a aposta e tira os botoes (sem botao, sem erro).
         jogo = await asyncio.to_thread(data.remover_mines, self.dono_id)
         if jogo is not None:
             await _reembolsar(self.dono_id, jogo)
             log.info("mines: reembolso por timeout pra %d", self.dono_id)
+        if self.message is not None:
+            try:
+                await self.message.edit(view=None)
+            except Exception:
+                pass
 
 
 class Bet(commands.Cog, name="Axolotl Bet"):
@@ -482,9 +478,8 @@ class Bet(commands.Cog, name="Axolotl Bet"):
                 "🎰 uso: `>slots <dima|amet> <1-1000>`. ex: `>slots 67`."
             )
             return
-        if not await _cobrar(ctx.author.id, moeda, valor):
-            dima, amet, _ = await asyncio.to_thread(data.buscar_saldo, ctx.author.id)
-            saldo = dima if moeda == "dima" else amet
+        ok, saldo = await _cobrar(ctx.author.id, moeda, valor)
+        if not ok:
             await ctx.send(
                 f"🎰 a aposta é **{valor}** {_moeda_emoji(moeda)}! (você tem **{saldo}**)"
             )
@@ -524,7 +519,8 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         self, interaction: discord.Interaction, moeda: str, valor: app_commands.Range[int, 1, 1000]
     ):
         """versão slash do >slots."""
-        if not await _cobrar(interaction.user.id, moeda, valor):
+        ok, _saldo = await _cobrar(interaction.user.id, moeda, valor)
+        if not ok:
             await interaction.response.send_message(
                 f"🎰 a aposta é **{valor}** {_moeda_emoji(moeda)}!",
                 ephemeral=True,
@@ -560,7 +556,8 @@ class Bet(commands.Cog, name="Axolotl Bet"):
                 "🪙 uso: `>caraoucoroa <cara|coroa> <dima|amet> <1-1000>`."
             )
             return
-        if not await _cobrar(ctx.author.id, moeda, valor):
+        ok, _saldo = await _cobrar(ctx.author.id, moeda, valor)
+        if not ok:
             await ctx.send(f"🪙 a aposta é **{valor}** {_moeda_emoji(moeda)}!")
             return
         ganhou, lado = _jogar_moeda(escolha)
@@ -603,7 +600,8 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         valor: app_commands.Range[int, 1, 1000],
     ):
         """versão slash do >caraoucoroa."""
-        if not await _cobrar(interaction.user.id, moeda, valor):
+        ok, _saldo = await _cobrar(interaction.user.id, moeda, valor)
+        if not ok:
             await interaction.response.send_message(
                 f"🪙 a aposta é **{valor}** {_moeda_emoji(moeda)}!",
                 ephemeral=True,
@@ -652,11 +650,12 @@ class Bet(commands.Cog, name="Axolotl Bet"):
             return
         jogo = await asyncio.to_thread(data.buscar_mines, ctx.author.id)
         msg = f"{ctx.author.mention} reembolsei o jogo anterior. " if tinha else ""
-        await ctx.send(
+        enviada = await ctx.send(
             content=msg or None,
             embed=_embed_mines(jogo),
             view=view,
         )
+        view.message = enviada
 
     @app_commands.command(name="mines", description="mines: ache 💎, fuja da 💣, retire quando quiser.")
     @app_commands.describe(
@@ -693,6 +692,10 @@ class Bet(commands.Cog, name="Axolotl Bet"):
             embed=_embed_mines(jogo),
             view=view,
         )
+        try:
+            view.message = await interaction.original_response()
+        except Exception:
+            pass
 
 
 async def setup(bot: commands.Bot):

@@ -4,6 +4,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 import asyncio
+import concurrent.futures
 import inspect
 import logging
 import os
@@ -33,6 +34,7 @@ COGS = (
     "cogs.daily",
     "cogs.osu",
     "cogs.bet",
+    "cogs.backup",
 )
 
 # so liga o minimo: sem `guild_messages` o `>` nem chega,
@@ -449,6 +451,14 @@ async def main():
 
     data.init()
     log.info("banco de dados pronto")
+
+    # muita gente junto: pool proprio pro `to_thread` (banco, api, card)
+    # em vez do padrao magro (min 32, cpu+4). o loop nunca espera disco.
+    asyncio.get_running_loop().set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(
+            max_workers=64, thread_name_prefix="alt"
+        )
+    )
 
     async with bot:
         for cog in COGS:

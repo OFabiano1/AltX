@@ -81,7 +81,7 @@ class Niveis(commands.Cog, name="Níveis"):
         await ctx.send(embed=embed)
 
     # ─── >ranking ───
-    @commands.command(name="ranking", aliases=["top"])
+    @commands.command(name="ranking")
     async def ranking(self, ctx: commands.Context):
         """ranking dos top 5 membros do servidor por xp."""
         ranking = await asyncio.to_thread(data.top_xp, 5)
@@ -145,34 +145,6 @@ class Niveis(commands.Cog, name="Níveis"):
     @app_commands.command(name="ranking", description="ranking dos top 5 membros do servidor.")
     async def ranking_slash(self, interaction: discord.Interaction):
         """versão slash do >ranking."""
-        ranking = await asyncio.to_thread(data.top_xp, 5)
-        if not ranking:
-            await interaction.response.send_message(
-                f"{visual.AXOLOTL} ninguém tem XP ainda! Comecem a conversar!",
-                ephemeral=True,
-            )
-            return
-
-        medalhas = [f"**{i}.**" for i in range(1, 6)]
-        linhas = []
-
-        for i, (user_id, nivel, xp) in enumerate(ranking):
-            membro = interaction.guild.get_member(user_id) if interaction.guild else None
-            nome = membro.display_name if membro else f"Usuário {user_id}"
-            linhas.append(f"{medalhas[i]} {nome} — Nível **{nivel}** | {xp} XP")
-
-        embed = discord.Embed(
-            title="Top 5 — Ranking de Níveis",
-            description="\n".join(linhas),
-            color=visual.WARNING,
-        )
-        embed.set_footer(text=visual.FOOTER)
-        await interaction.response.send_message(embed=embed)
-
-    # ─── /top (alias antigo do /ranking) ───
-    @app_commands.command(name="top", description="ranking dos top 5 membros do servidor.")
-    async def top_slash(self, interaction: discord.Interaction):
-        """alias antigo: mesmo que /ranking."""
         ranking = await asyncio.to_thread(data.top_xp, 5)
         if not ranking:
             await interaction.response.send_message(

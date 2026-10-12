@@ -15,12 +15,9 @@ log = logging.getLogger("alt.data")
 DB_PATH = Path(__file__).parent / "data" / "alt.db"
 LEGACY_XP = Path(__file__).parent / "data" / "xp.json"
 
-# serializa acesso dentro do processo. BEGIN IMMEDIATE (abaixo) cuida da
-# atomicidade da transação; este lock evita contenção entre tarefas do
-# mesmo event loop.
-# serializa acesso dentro do processo. BEGIN IMMEDIATE (abaixo) cuida da
-# atomicidade da transação; este lock evita contenção entre tarefas do
-# mesmo event loop.
+# so escrita pega lock. leitura vai sem: no modo wal leitores concorrentes
+# nao bloqueiam (cada chamada usa a propria conexao). BEGIN IMMEDIATE nas
+# escritas + timeout 30s cuidam da concorrencia entre elas.
 _lock = threading.Lock()
 
 # coluna de placar para cada resultado. Mapeamento explícito em vez de
@@ -175,6 +172,11 @@ CREATE TABLE IF NOT EXISTS mines_jogos (
 def _conectar():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30)
+    # por-conexao (nao persistem): espera na trava, cache e temp em ram.
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA cache_size=-64000")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA mmap_size=134217728")
     try:
         conn.row_factory = sqlite3.Row
         yield conn
@@ -193,7 +195,7 @@ def xp_para_proximo(nivel: int) -> int:
 
 def buscar_xp(user_id: int) -> tuple[int, int]:
     """retorna (xp, nivel). Números neutros para usuário desconhecido."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT xp, nivel FROM xp WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -253,7 +255,7 @@ def definir_xp(user_id: int, xp: int) -> tuple[int, int]:
 
 def top_xp(limite: int = 10) -> list[tuple[int, int, int]]:
     """top N por nível, desempate por XP. Retorna [(user_id, nivel, xp)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT user_id, nivel, xp FROM xp "
             "ORDER BY nivel DESC, xp DESC LIMIT ?",
@@ -265,7 +267,7 @@ def top_xp(limite: int = 10) -> list[tuple[int, int, int]]:
 # ─── pedra, tesoura e papel ───
 def buscar_ptp(user_id: int) -> tuple[int, int, int]:
     """retorna (vitorias, derrotas, empates)."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT v, d, e FROM ptp WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -292,7 +294,7 @@ def registrar_ptp(user_id: int, resultado: str) -> tuple[int, int, int]:
 
 def top_ptp(limite: int = 5) -> list[tuple[int, int, int, int]]:
     """top N por vitórias. Retorna [(user_id, v, d, e)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT user_id, v, d, e FROM ptp "
             "WHERE (v + d + e) > 0 ORDER BY v DESC, e DESC LIMIT ?",
@@ -304,7 +306,7 @@ def top_ptp(limite: int = 5) -> list[tuple[int, int, int, int]]:
 # ─── economia (diamantes + ametista + aura) ───
 def buscar_saldo(user_id: int) -> tuple[int, int, str | None]:
     """retorna (diamantes, ametista, aura_equipadada)."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT diamantes, ametista, aura FROM economia WHERE user_id = ?",
             (user_id,),
@@ -316,7 +318,7 @@ def buscar_saldo(user_id: int) -> tuple[int, int, str | None]:
 
 def buscar_daily(user_id: int) -> str | None:
     """ultimo dia (YYYY-MM-DD UTC) que resgatou o daily, ou None."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT last_daily FROM economia WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -419,7 +421,7 @@ def tentar_daily(user_id: int, dima: int, amet: int, hoje: str) -> tuple[bool, i
 
 def top_diamantes(limite: int = 10) -> list[tuple[int, int]]:
     """top N por diamantes. Retorna [(user_id, diamantes)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT user_id, diamantes FROM economia "
             "WHERE diamantes > 0 ORDER BY diamantes DESC LIMIT ?",
@@ -430,7 +432,7 @@ def top_diamantes(limite: int = 10) -> list[tuple[int, int]]:
 
 # ─── auras ───
 def tem_aura(user_id: int, aura_id: str) -> bool:
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT 1 FROM auras WHERE user_id = ? AND aura_id = ?",
             (user_id, aura_id),
@@ -448,7 +450,7 @@ def dar_aura(user_id: int, aura_id: str) -> None:
 
 
 def auras_usuario(user_id: int) -> list[str]:
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT aura_id FROM auras WHERE user_id = ?", (user_id,)
         ).fetchall()
@@ -484,7 +486,7 @@ def adicionar_axolotl(user_id: int, axolotl_id: str) -> int:
 
 def buscar_colecao(user_id: int) -> list[tuple[str, int]]:
     """retorna [(axolotl_id, qtd)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT axolotl_id, qtd FROM colecao WHERE user_id = ? ORDER BY qtd DESC",
             (user_id,),
@@ -514,7 +516,7 @@ def remover_mudae(user_id: int) -> None:
 
 def listar_mudae() -> list[tuple[int, int, int, float]]:
     """retorna [(user_id, channel_id, guild_id, expires_at)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT user_id, channel_id, guild_id, expires_at FROM mudae_reminder"
         ).fetchall()
@@ -542,7 +544,7 @@ def soltar_voz(guild_id: int) -> None:
 
 def voz_fixa(guild_id: int) -> int | None:
     """devolve a call fixada ou None."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT channel_id FROM voz_fixa WHERE guild_id = ?", (guild_id,)
         ).fetchone()
@@ -576,7 +578,7 @@ def desvincular_deadlock(discord_id: int) -> bool:
 
 def buscar_deadlock(discord_id: int) -> int | None:
     """devolve o steam_id vinculado ou None."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT steam_id FROM deadlock_links WHERE discord_id = ?",
             (discord_id,),
@@ -587,7 +589,7 @@ def buscar_deadlock(discord_id: int) -> int | None:
 # ─── github monitorado ───
 def buscar_github(repo: str) -> str | None:
     """ultimo sha postado do repo, ou None (primeira vez)."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT sha FROM github_seen WHERE repo = ?", (repo,)
         ).fetchone()
@@ -610,7 +612,7 @@ def salvar_github(repo: str, sha: str) -> None:
 
 def viu_evento(event_id: str) -> bool:
     """True se o evento do github ja foi postado."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT 1 FROM github_seen_events WHERE event_id = ?", (event_id,)
         ).fetchone()
@@ -645,7 +647,7 @@ def marcar_feita(user_id: int, dia: str, quest_id: str) -> bool:
 
 def feitas_no_dia(user_id: int, dia: str) -> list[str]:
     """quest_ids feitas no dia."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT quest_id FROM diaria_feita WHERE user_id = ? AND dia = ?",
             (user_id, dia),
@@ -655,7 +657,7 @@ def feitas_no_dia(user_id: int, dia: str) -> list[str]:
 
 def quem_jogou(dia: str) -> list[int]:
     """quem fez ao menos 1 quest no dia."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT DISTINCT user_id FROM diaria_feita WHERE dia = ?", (dia,)
         ).fetchall()
@@ -664,7 +666,7 @@ def quem_jogou(dia: str) -> list[int]:
 
 def buscar_streak(user_id: int) -> tuple[int, str]:
     """retorna (dias, ultimo_dia)."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT dias, ultimo_dia FROM streak WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -684,7 +686,7 @@ def salvar_streak(user_id: int, dias: int, ultimo_dia: str) -> None:
 
 def streak_ativos() -> list[tuple[int, int, str]]:
     """quem tem streak > 0: [(user_id, dias, ultimo_dia)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT user_id, dias, ultimo_dia FROM streak WHERE dias > 0"
         ).fetchall()
@@ -693,7 +695,7 @@ def streak_ativos() -> list[tuple[int, int, str]]:
 
 def buscar_discord_por_steam(steam_id: int) -> int | None:
     """discord dono da steam vinculada, ou None."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT discord_id FROM deadlock_links WHERE steam_id = ?", (steam_id,)
         ).fetchone()
@@ -702,7 +704,7 @@ def buscar_discord_por_steam(steam_id: int) -> int | None:
 
 def listar_deadlocks() -> list[tuple[int, int]]:
     """todos os vinculos [(discord_id, steam_id)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute("SELECT discord_id, steam_id FROM deadlock_links").fetchall()
     return [(r["discord_id"], r["steam_id"]) for r in rows]
 
@@ -720,7 +722,7 @@ def salvar_digest(dia: str, channel_id: int, message_id: int) -> None:
 
 def buscar_digest(dia: str) -> tuple[int, int] | None:
     """(channel_id, message_id) do digest do dia, ou None."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT channel_id, message_id FROM digest_msg WHERE dia = ?", (dia,)
         ).fetchone()
@@ -774,7 +776,7 @@ def desvincular_repo(repo: str, channel_id: int) -> bool:
 
 def destinos_repo(repo: str) -> list[int]:
     """chats vinculados ao repo."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT channel_id FROM github_destinos WHERE repo = ?", (repo,)
         ).fetchall()
@@ -783,7 +785,7 @@ def destinos_repo(repo: str) -> list[int]:
 
 def listar_destinos() -> list[tuple[str, int]]:
     """todos os vinculos [(repo, channel_id)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT repo, channel_id FROM github_destinos ORDER BY repo"
         ).fetchall()
@@ -793,7 +795,7 @@ def listar_destinos() -> list[tuple[str, int]]:
 # ─── doces de halloween ───
 def buscar_doces(user_id: int) -> int:
     """total de doces do usuario."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -838,7 +840,7 @@ def gastar_doces(user_id: int, qtd: int) -> tuple[bool, int]:
 
 def top_doces(limite: int = 5) -> list[tuple[int, int]]:
     """top N por doces. retorna [(user_id, doces)]."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT user_id, doces FROM doces "
             "WHERE doces > 0 ORDER BY doces DESC LIMIT ?",
@@ -862,7 +864,7 @@ def registrar_aposta(user_id: int, venceu: bool) -> None:
 
 def buscar_bet(user_id: int) -> tuple[int, int]:
     """retorna (apostas, vitorias)."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT apostas, vitorias FROM bet_stats WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -871,7 +873,7 @@ def buscar_bet(user_id: int) -> tuple[int, int]:
 
 # ─── conquistas ───
 def tem_conquista(user_id: int, conquista_id: str) -> bool:
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT 1 FROM conquistas WHERE user_id = ? AND conquista_id = ?",
             (user_id, conquista_id),
@@ -891,8 +893,34 @@ def dar_conquista(user_id: int, conquista_id: str, quando: str = "") -> bool:
         return cur.rowcount > 0
 
 
+def posicao_xp(user_id: int) -> int | None:
+    """posicao no ranking (1 = top). None se sem xp."""
+    with _conectar() as conn:
+        row = conn.execute(
+            "SELECT nivel, xp FROM xp WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        n = conn.execute(
+            "SELECT COUNT(*) FROM xp WHERE nivel > ? OR (nivel = ? AND xp > ?)",
+            (row["nivel"], row["nivel"], row["xp"]),
+        ).fetchone()[0]
+        return n + 1
+
+
+def conquistas_recentes(user_id: int, limite: int = 3) -> list[str]:
+    """ultimas desbloqueadas (mais nova primeiro)."""
+    with _conectar() as conn:
+        rows = conn.execute(
+            "SELECT conquista_id FROM conquistas WHERE user_id = ? "
+            "ORDER BY rowid DESC LIMIT ?",
+            (user_id, limite),
+        ).fetchall()
+    return [r["conquista_id"] for r in rows]
+
+
 def conquistas_usuario(user_id: int) -> list[str]:
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute(
             "SELECT conquista_id FROM conquistas WHERE user_id = ?", (user_id,)
         ).fetchall()
@@ -970,7 +998,7 @@ def salvar_mines(user_id: int, moeda: str, valor: int, minas: set[int]) -> None:
 
 
 def buscar_mines(user_id: int) -> dict | None:
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         row = conn.execute(
             "SELECT * FROM mines_jogos WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -1011,9 +1039,32 @@ def remover_mines(user_id: int) -> dict | None:
 
 def listar_mines() -> list[dict]:
     """todos os jogos abertos (reembolso pos-restart)."""
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         rows = conn.execute("SELECT * FROM mines_jogos").fetchall()
     return [_linha_mines(r) for r in rows]
+
+
+# ─── debito atomico (apostas, loja, caixas: checa e tira numa transacao) ───
+def debitar_moeda(user_id: int, moeda: str, valor: int) -> tuple[bool, int]:
+    """tira valor se tiver saldo. retorna (ok, saldo_atual). Sem saldo = sem mudanca."""
+    if valor <= 0 or moeda not in ("dima", "amet"):
+        return False, 0
+    coluna = "diamantes" if moeda == "dima" else "ametista"
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            f"SELECT {coluna} FROM economia WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        saldo = row[coluna] if row else 0
+        if saldo < valor:
+            return False, saldo
+        novo = saldo - valor
+        conn.execute(
+            f"INSERT INTO economia (user_id, {coluna}) VALUES (?, ?) "
+            f"ON CONFLICT(user_id) DO UPDATE SET {coluna} = ?",
+            (user_id, novo, novo),
+        )
+        return True, novo
 
 
 # ─── snapshot do player (tudo numa conexao so: abre rapido) ───
@@ -1023,7 +1074,7 @@ def snapshot(user_id: int, hoje: str) -> dict:
     retorna {xp, nivel, dima, amet, aura, colecao, apostas, vitorias,
     doces, daily, feitas, streak, ptp, steam}. colecao: [(axolotl_id, qtd)].
     """
-    with _lock, _conectar() as conn:
+    with _conectar() as conn:
         r = conn.execute(
             "SELECT xp, nivel FROM xp WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -1091,6 +1142,30 @@ def snapshot(user_id: int, hoje: str) -> dict:
             ).fetchall()
         }
 
+        tem_xp = (
+            conn.execute(
+                "SELECT 1 FROM xp WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            is not None
+        )
+        pos = (
+            conn.execute(
+                "SELECT COUNT(*) FROM xp WHERE nivel > ? OR (nivel = ? AND xp > ?)",
+                (nivel, nivel, xp),
+            ).fetchone()[0]
+            + 1
+            if tem_xp
+            else None
+        )
+        recentes = [
+            x["conquista_id"]
+            for x in conn.execute(
+                "SELECT conquista_id FROM conquistas WHERE user_id = ? "
+                "ORDER BY rowid DESC LIMIT 3",
+                (user_id,),
+            ).fetchall()
+        ]
+
     return {
         "xp": xp,
         "nivel": nivel,
@@ -1107,7 +1182,62 @@ def snapshot(user_id: int, hoje: str) -> dict:
         "ptp": ptp,
         "steam": steam,
         "buffs": buffs,
+        "pos": pos,
+        "recentes": recentes,
     }
+
+
+# ─── backup ───
+
+BACKUP_DIR = DB_PATH.parent / "backups"
+
+
+def backup(keep: int = 7):
+    """copia consistente do banco (api de backup do sqlite, pega o wal junto).
+
+    guarda em data/backups/ com retencao dos N mais novos.
+    retorna o arquivo ou None se nem tem banco ainda.
+    """
+    import datetime as _dt
+
+    if not DB_PATH.exists():
+        return None
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    destino = BACKUP_DIR / ("alt-%s.db" % _dt.datetime.now().strftime("%Y%m%d-%H%M"))
+    with _lock:
+        origem = sqlite3.connect(DB_PATH, timeout=30)
+        try:
+            alvo = sqlite3.connect(destino)
+            try:
+                origem.backup(alvo)
+            finally:
+                alvo.close()
+        finally:
+            origem.close()
+    arquivos = sorted(BACKUP_DIR.glob("alt-*.db"), key=lambda p: p.name)
+    for velho in arquivos[:-keep] if len(arquivos) > keep else []:
+        velho.unlink(missing_ok=True)
+    return destino
+
+
+def verificar_backup(caminho) -> bool:
+    """True se integrity_check passa e as tabelas abrem (teste de restore)."""
+    from urllib.request import pathname2url
+
+    try:
+        # pathname2url: `#` no caminho (ex `#Projetos`) virava fragmento no modo uri.
+        conn = sqlite3.connect(
+            f"file:{pathname2url(str(caminho))}?mode=ro", uri=True, timeout=10
+        )
+        try:
+            ok = conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            conn.execute("SELECT COUNT(*) FROM xp").fetchone()
+            conn.execute("SELECT COUNT(*) FROM economia").fetchone()
+            return ok
+        finally:
+            conn.close()
+    except Exception:
+        return False
 
 
 # ─── migração ───
