@@ -15,8 +15,8 @@ import data
 
 # ─── apostas ───
 
-# faixas fixas: sem valor quebrado, sem all-in que quebra a economia.
-VALORES = (10, 50, 100)
+# vale qualquer valor de 1 a 1000. teto anti all-in que quebra a economia.
+MIN_APOSTA, MAX_APOSTA = 1, 1000
 
 ALIAS_MOEDA = {
     "dima": "dima",
@@ -45,7 +45,7 @@ def _parse_aposta(moeda_txt: str | None, valor_txt: str | None) -> tuple[str | N
         valor = int(txt_valor or 0)
     except (TypeError, ValueError):
         valor = 0
-    if not moeda or valor not in VALORES:
+    if not moeda or not MIN_APOSTA <= valor <= MAX_APOSTA:
         return None, 0
     return moeda, valor
 
@@ -204,17 +204,7 @@ class BetView(discord.ui.View):
         await interaction.response.send_message(
             embed=_embed_slots(titulo, "❓", "❓", "❓", "girando...", visual.PRIMARY)
         )
-        await asyncio.sleep(0.7)
-        await interaction.edit_original_response(
-            embed=_embed_slots(titulo, itens[0], "❓", "❓", "girando...", visual.PRIMARY)
-        )
-        await asyncio.sleep(0.7)
-        await interaction.edit_original_response(
-            embed=_embed_slots(
-                titulo, itens[0], itens[1], "❓", "girando...", visual.PRIMARY
-            )
-        )
-        await asyncio.sleep(0.7)
+        await _animar_slots(interaction.edit_original_response, titulo, itens)
         await interaction.edit_original_response(
             embed=_embed_slots(titulo, *itens, linha, cor), view=self
         )
@@ -224,7 +214,7 @@ class BetView(discord.ui.View):
 
 
 def _embed_bet(barra: str) -> discord.Embed:
-    """hub do axolotl bet: jogos + combos + faixas."""
+    """hub do axolotl bet: jogos + combos + valores."""
     embed = discord.Embed(
         title="🎰 axolotl bet",
         description="o cassino do lago. só moeda: ganha ou perde diamante/ametista, nada de item.",
@@ -233,7 +223,7 @@ def _embed_bet(barra: str) -> discord.Embed:
     embed.add_field(
         name="🎰 slots",
         value=(
-            f"`{barra}slots <dima|amet> <10|50|100>`\n"
+            f"`{barra}slots <dima|amet> <1-1000>`\n"
             + "\n".join(f"{s} {s} {s} — **{m}x**" for s, m in PAGA_TRINCA.items())
             + "\npar devolve a aposta."
         ),
@@ -242,7 +232,7 @@ def _embed_bet(barra: str) -> discord.Embed:
     embed.add_field(
         name="🪙 cara ou coroa",
         value=(
-            f"`{barra}caraoucoroa <cara|coroa> <dima|amet> <10|50|100>`\n"
+            f"`{barra}caraoucoroa <cara|coroa> <dima|amet> <1-1000>`\n"
             "50/50, paga **2x**."
         ),
         inline=False,
@@ -250,19 +240,19 @@ def _embed_bet(barra: str) -> discord.Embed:
     embed.add_field(
         name="⛏️ mines",
         value=(
-            f"`{barra}mines <dima|amet> <10|50|100> [minas 1-8]`\n"
-            "20 pedras, N bombas. cada 💎 aumenta o multi, 💣 perde tudo. retire quando quiser."
+            f"`{barra}mines <dima|amet> <1-1000> [minas 1-15]`\n"
+            "25 pedras, N bombas. cada 💎 aumenta o multi, 💣 perde tudo. clica num 💎 aberto pra retirar."
         ),
         inline=False,
     )
-    embed.set_footer(text=f"faixas 10/50/100 • derrota some, vitória fica • {visual.FOOTER}")
+    embed.set_footer(text=f"vale 1-1000 • derrota some, vitória fica • {visual.FOOTER}")
     return embed
 
 
 # ─── mines ───
 
-MINAS_TOTAL = 20  # 4 fileiras x 5 + fileira do retirar
-MINAS_MIN, MINAS_MAX, MINAS_PADRAO = 1, 8, 3
+MINAS_TOTAL = 25  # 5x5. sem fileira do retirar: 💎 aberto saca.
+MINAS_MIN, MINAS_MAX, MINAS_PADRAO = 1, 20, 5
 
 # dono_id -> {moeda, valor, minas:set, abertos:set, view}.
 # 1 jogo por pessoa: comecar outro reembolsa o anterior.
@@ -270,20 +260,17 @@ JOGOS_MINES: dict[int, dict] = {}
 
 
 def _mult_mines(abertos: int, minas: int) -> float:
-    """multiplicador justo com ~3% pra banca."""
+    """multiplicador justo com ~5% pra banca."""
     if abertos <= 0:
         return 1.0
-    return comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * 0.97
+    return comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * 0.95
 
 
 def _embed_mines(jogo: dict, fim: str = "") -> discord.Embed:
-    """placar do jogo: multi atual + potencial."""
+    """placar do jogo numa linha: bombas, multi e potencial."""
     mult = _mult_mines(len(jogo["abertos"]), len(jogo["minas"]))
     potencial = int(jogo["valor"] * mult)
-    desc = (
-        f"💣 **{len(jogo['minas'])}** bombas em **{MINAS_TOTAL}** pedras\n"
-        f"multi **{mult:.2f}x** · potencial **{potencial}** {_moeda_emoji(jogo['moeda'])}"
-    )
+    desc = f"💣 {len(jogo['minas'])} · **{mult:.2f}x** · potencial **{potencial}** {_moeda_emoji(jogo['moeda'])}"
     if fim:
         desc += f"\n{fim}"
     embed = discord.Embed(
@@ -291,7 +278,7 @@ def _embed_mines(jogo: dict, fim: str = "") -> discord.Embed:
         description=desc,
         color=visual.PRIMARY,
     )
-    embed.set_footer(text="retire quando quiser • 5min sem jogar encerra • " + visual.FOOTER)
+    embed.set_footer(text="clica num 💎 aberto pra retirar • 5min sem jogar encerra • " + visual.FOOTER)
     return embed
 
 
@@ -299,9 +286,6 @@ def _pintar_mines(view: discord.ui.View, jogo: dict, revelar_tudo: bool = False)
     """atualiza os botoes: 💎 aberto, 💣 bomba, ⬜ fechado."""
     for b in view.children:
         cid = b.custom_id or ""
-        if cid == "mines:sacar":
-            b.disabled = revelar_tudo
-            continue
         idx = int(cid.split(":")[1])
         if idx in jogo["abertos"]:
             bomba = idx in jogo["minas"]
@@ -350,20 +334,28 @@ async def _cavar(interaction: discord.Interaction, dono_id: int, idx: int):
         )
         return
     if idx in jogo["abertos"]:
-        await interaction.response.send_message("essa pedra já foi!", ephemeral=True)
+        # 💎 aberto = retirar.
+        await _sacar_jogo(dono_id, interaction)
         return
     jogo["abertos"].add(idx)
     view = jogo["view"]
     if idx in jogo["minas"]:
-        # bomba: perde tudo, some em 15s.
+        # bomba: mostra tudo e depois some so os botoes, o embed fica.
         await asyncio.to_thread(data.registrar_aposta, dono_id, False)
         JOGOS_MINES.pop(dono_id, None)
+        fim = f"💣 **bum!** perdeu **{jogo['valor']}** {_moeda_emoji(jogo['moeda'])}."
         _pintar_mines(view, jogo, revelar_tudo=True)
         await interaction.response.edit_message(
-            embed=_embed_mines(jogo, fim=f"💣 **bum!** perdeu **{jogo['valor']}** {_moeda_emoji(jogo['moeda'])}."),
+            embed=_embed_mines(jogo, fim=fim),
             view=view,
         )
-        asyncio.create_task(_sumir(await interaction.original_response()))
+        await asyncio.sleep(5)
+        try:
+            await interaction.edit_original_response(
+                embed=_embed_mines(jogo, fim=fim), view=None
+            )
+        except Exception:
+            pass
         return
     if len(jogo["abertos"]) == MINAS_TOTAL - len(jogo["minas"]):
         # limpou tudo: saca sozinho.
@@ -374,7 +366,7 @@ async def _cavar(interaction: discord.Interaction, dono_id: int, idx: int):
 
 
 async def _sacar_jogo(dono_id: int, interaction: discord.Interaction, auto: bool = False):
-    """retira com o multi atual. vitoria fica, resto some em 15s."""
+    """retira com o multi atual. botoes saem, embed fica."""
     jogo = JOGOS_MINES.pop(dono_id, None)
     if jogo is None:
         await interaction.response.send_message(
@@ -391,14 +383,12 @@ async def _sacar_jogo(dono_id: int, interaction: discord.Interaction, auto: bool
         else f"💰 sacou **{premio}** {_moeda_emoji(jogo['moeda'])} (**{mult:.2f}x**)."
     )
     await interaction.response.edit_message(
-        embed=_embed_mines(jogo, fim=fim), view=jogo["view"]
+        embed=_embed_mines(jogo, fim=fim), view=None
     )
-    if premio <= jogo["valor"]:
-        asyncio.create_task(_sumir(await interaction.original_response()))
 
 
 class MinesView(discord.ui.View):
-    """grid 20 pedras + retirar. so o dono clica. expira em 5min."""
+    """grid 5x5. so o dono clica. expira em 5min."""
 
     def __init__(self, dono_id: int):
         super().__init__(timeout=300)
@@ -412,29 +402,12 @@ class MinesView(discord.ui.View):
             )
             b.callback = self._fabrica(i)
             self.add_item(b)
-        sacar = discord.ui.Button(
-            label="retirar",
-            emoji="💰",
-            style=discord.ButtonStyle.success,
-            custom_id="mines:sacar",
-            row=4,
-        )
-        sacar.callback = self._sacar
-        self.add_item(sacar)
 
     def _fabrica(self, idx: int):
         async def cavar(interaction: discord.Interaction):
             await _cavar(interaction, self.dono_id, idx)
 
         return cavar
-
-    async def _sacar(self, interaction: discord.Interaction):
-        if interaction.user.id != self.dono_id:
-            await interaction.response.send_message(
-                "esse jogo não é seu!", ephemeral=True
-            )
-            return
-        await _sacar_jogo(self.dono_id, interaction)
 
     async def on_timeout(self):
         JOGOS_MINES.pop(self.dono_id, None)
@@ -464,7 +437,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         moeda, valor = _parse_aposta(moeda_txt, valor_txt)
         if moeda is None:
             await ctx.send(
-                "🎰 uso: `>slots <dima|amet> <10|50|100>`. ex: `>slots 50`."
+                "🎰 uso: `>slots <dima|amet> <1-1000>`. ex: `>slots 67`."
             )
             return
         if not await _cobrar(ctx.author.id, moeda, valor):
@@ -498,19 +471,16 @@ class Bet(commands.Cog, name="Axolotl Bet"):
             asyncio.create_task(_sumir(msg))
 
     @app_commands.command(name="slots", description="slots: trinca paga até 10x.")
-    @app_commands.describe(moeda="qual moeda apostar", valor="quanto apostar")
+    @app_commands.describe(moeda="qual moeda apostar", valor="quanto apostar (1-1000)")
     @app_commands.choices(
         moeda=[
             app_commands.Choice(name="diamantes", value="dima"),
             app_commands.Choice(name="ametista", value="amet"),
-        ],
-        valor=[
-            app_commands.Choice(name="10", value=10),
-            app_commands.Choice(name="50", value=50),
-            app_commands.Choice(name="100", value=100),
-        ],
+        ]
     )
-    async def slots_slash(self, interaction: discord.Interaction, moeda: str, valor: int):
+    async def slots_slash(
+        self, interaction: discord.Interaction, moeda: str, valor: app_commands.Range[int, 1, 1000]
+    ):
         """versão slash do >slots."""
         if not await _cobrar(interaction.user.id, moeda, valor):
             await interaction.response.send_message(
@@ -545,7 +515,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         moeda, valor = _parse_aposta(moeda_txt, valor_txt)
         if escolha not in LADOS or moeda is None:
             await ctx.send(
-                "🪙 uso: `>caraoucoroa <cara|coroa> <dima|amet> <10|50|100>`."
+                "🪙 uso: `>caraoucoroa <cara|coroa> <dima|amet> <1-1000>`."
             )
             return
         if not await _cobrar(ctx.author.id, moeda, valor):
@@ -571,7 +541,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
 
     @app_commands.command(name="caraoucoroa", description="50/50 valendo moeda. paga 2x.")
     @app_commands.describe(
-        escolha="cara ou coroa", moeda="qual moeda apostar", valor="quanto apostar"
+        escolha="cara ou coroa", moeda="qual moeda apostar", valor="quanto apostar (1-1000)"
     )
     @app_commands.choices(
         escolha=[
@@ -581,15 +551,14 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         moeda=[
             app_commands.Choice(name="diamantes", value="dima"),
             app_commands.Choice(name="ametista", value="amet"),
-        ],
-        valor=[
-            app_commands.Choice(name="10", value=10),
-            app_commands.Choice(name="50", value=50),
-            app_commands.Choice(name="100", value=100),
-        ],
+        ]
     )
     async def caraoucoroa_slash(
-        self, interaction: discord.Interaction, escolha: str, moeda: str, valor: int
+        self,
+        interaction: discord.Interaction,
+        escolha: str,
+        moeda: str,
+        valor: app_commands.Range[int, 1, 1000],
     ):
         """versão slash do >caraoucoroa."""
         if not await _cobrar(interaction.user.id, moeda, valor):
@@ -630,7 +599,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
             minas = 0
         if moeda is None or not MINAS_MIN <= minas <= MINAS_MAX:
             await ctx.send(
-                f"⛏️ uso: `>mines <dima|amet> <10|50|100> [minas {MINAS_MIN}-{MINAS_MAX}]`. "
+                f"⛏️ uso: `>mines <dima|amet> <1-1000> [minas {MINAS_MIN}-{MINAS_MAX}]`. "
                 "ex: `>mines 50 3`."
             )
             return
@@ -649,26 +618,21 @@ class Bet(commands.Cog, name="Axolotl Bet"):
     @app_commands.command(name="mines", description="mines: ache 💎, fuja da 💣, retire quando quiser.")
     @app_commands.describe(
         moeda="qual moeda apostar",
-        valor="quanto apostar",
-        minas="quantas bombas (1-8)",
+        valor="quanto apostar (1-1000)",
+        minas="quantas bombas (1-20)",
     )
     @app_commands.choices(
         moeda=[
             app_commands.Choice(name="diamantes", value="dima"),
             app_commands.Choice(name="ametista", value="amet"),
-        ],
-        valor=[
-            app_commands.Choice(name="10", value=10),
-            app_commands.Choice(name="50", value=50),
-            app_commands.Choice(name="100", value=100),
-        ],
+        ]
     )
     async def mines_slash(
         self,
         interaction: discord.Interaction,
         moeda: str,
-        valor: int,
-        minas: app_commands.Range[int, 1, 8] = 3,
+        valor: app_commands.Range[int, 1, 1000],
+        minas: app_commands.Range[int, 1, 20] = 5,
     ):
         """versão slash do >mines."""
         tinha = interaction.user.id in JOGOS_MINES

@@ -146,6 +146,13 @@ CREATE TABLE IF NOT EXISTS bet_stats (
     apostas  INTEGER NOT NULL DEFAULT 0,
     vitorias INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS conquistas (
+    user_id      INTEGER NOT NULL,
+    conquista_id TEXT NOT NULL,
+    quando       TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, conquista_id)
+);
 """
 
 
@@ -845,6 +852,118 @@ def buscar_bet(user_id: int) -> tuple[int, int]:
             "SELECT apostas, vitorias FROM bet_stats WHERE user_id = ?", (user_id,)
         ).fetchone()
     return (row["apostas"], row["vitorias"]) if row else (0, 0)
+
+
+# ─── conquistas ───
+def tem_conquista(user_id: int, conquista_id: str) -> bool:
+    with _lock, _conectar() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM conquistas WHERE user_id = ? AND conquista_id = ?",
+            (user_id, conquista_id),
+        ).fetchone()
+    return row is not None
+
+
+def dar_conquista(user_id: int, conquista_id: str, quando: str = "") -> bool:
+    """desbloqueia. True se foi agora (novo)."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO conquistas (user_id, conquista_id, quando) "
+            "VALUES (?, ?, ?)",
+            (user_id, conquista_id, quando),
+        )
+        return cur.rowcount > 0
+
+
+def conquistas_usuario(user_id: int) -> list[str]:
+    with _lock, _conectar() as conn:
+        rows = conn.execute(
+            "SELECT conquista_id FROM conquistas WHERE user_id = ?", (user_id,)
+        ).fetchall()
+    return [r["conquista_id"] for r in rows]
+
+
+# ─── snapshot do player (tudo numa conexao so: abre rapido) ───
+def snapshot(user_id: int, hoje: str) -> dict:
+    """tudo que o >player precisa, numa leitura so.
+
+    retorna {xp, nivel, dima, amet, aura, colecao, apostas, vitorias,
+    doces, daily, feitas, streak, ptp, steam}. colecao: [(axolotl_id, qtd)].
+    """
+    with _lock, _conectar() as conn:
+        r = conn.execute(
+            "SELECT xp, nivel FROM xp WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        xp, nivel = (r["xp"], r["nivel"]) if r else (0, 1)
+
+        r = conn.execute(
+            "SELECT diamantes, ametista, aura, last_daily FROM economia WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        dima, amet, aura, daily = (
+            (r["diamantes"], r["ametista"], r["aura"], r["last_daily"])
+            if r
+            else (0, 0, None, None)
+        )
+
+        colecao = [
+            (x["axolotl_id"], x["qtd"])
+            for x in conn.execute(
+                "SELECT axolotl_id, qtd FROM colecao WHERE user_id = ? ORDER BY qtd DESC",
+                (user_id,),
+            ).fetchall()
+        ]
+
+        r = conn.execute(
+            "SELECT apostas, vitorias FROM bet_stats WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        apostas, vitorias = (r["apostas"], r["vitorias"]) if r else (0, 0)
+
+        r = conn.execute(
+            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        doces = r["doces"] if r else 0
+
+        feitas = [
+            x["quest_id"]
+            for x in conn.execute(
+                "SELECT quest_id FROM diaria_feita WHERE user_id = ? AND dia = ?",
+                (user_id, hoje),
+            ).fetchall()
+        ]
+
+        r = conn.execute(
+            "SELECT dias FROM streak WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        streak = r["dias"] if r else 0
+
+        r = conn.execute(
+            "SELECT v, d, e FROM ptp WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        ptp = (r["v"], r["d"], r["e"]) if r else (0, 0, 0)
+
+        r = conn.execute(
+            "SELECT steam_id FROM deadlock_links WHERE discord_id = ?", (user_id,)
+        ).fetchone()
+        steam = int(r["steam_id"]) if r else None
+
+    return {
+        "xp": xp,
+        "nivel": nivel,
+        "dima": dima,
+        "amet": amet,
+        "aura": aura,
+        "colecao": colecao,
+        "apostas": apostas,
+        "vitorias": vitorias,
+        "doces": doces,
+        "daily": daily,
+        "feitas": feitas,
+        "streak": streak,
+        "ptp": ptp,
+        "steam": steam,
+    }
 
 
 # ─── migração ───
