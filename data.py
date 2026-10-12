@@ -140,6 +140,12 @@ CREATE TABLE IF NOT EXISTS doces (
     user_id INTEGER PRIMARY KEY,
     doces   INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS bet_stats (
+    user_id  INTEGER PRIMARY KEY,
+    apostas  INTEGER NOT NULL DEFAULT 0,
+    vitorias INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -817,6 +823,28 @@ def top_doces(limite: int = 5) -> list[tuple[int, int]]:
             (limite,),
         ).fetchall()
     return [(r["user_id"], r["doces"]) for r in rows]
+
+
+# ─── apostas (axolotl bet: so contagem, sem valor — dima e amet nao se somam) ───
+def registrar_aposta(user_id: int, venceu: bool) -> None:
+    """soma 1 aposta (e 1 vitoria se venceu)."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "INSERT INTO bet_stats (user_id, apostas, vitorias) VALUES (?, 1, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET apostas = apostas + 1, "
+            "vitorias = vitorias + ?",
+            (user_id, 1 if venceu else 0, 1 if venceu else 0),
+        )
+
+
+def buscar_bet(user_id: int) -> tuple[int, int]:
+    """retorna (apostas, vitorias)."""
+    with _lock, _conectar() as conn:
+        row = conn.execute(
+            "SELECT apostas, vitorias FROM bet_stats WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    return (row["apostas"], row["vitorias"]) if row else (0, 0)
 
 
 # ─── migração ───

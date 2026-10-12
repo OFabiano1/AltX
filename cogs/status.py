@@ -19,6 +19,8 @@ STATUSES = [
     ("custom",     "✦ planejando a dominação mundial xD"),
     ("custom",     "✦ vocês não deveriam ter me criado XD"),
     ("custom",     "✦ observando os humanos ;)"),
+    ("custom",     "✦ use >player :)"),
+    ("custom",     "✦ use >bet 🎰"),
     ("jogando",    "Deadlock"),
     ("jogando",    "AxolotlSMP.enxada.host"),
 ]
@@ -31,6 +33,8 @@ class Status(commands.Cog, name="Status"):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # fila embaralhada: mostra os 15 sem repetir antes de reembaralhar.
+        self._fila: list = []
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -39,7 +43,10 @@ class Status(commands.Cog, name="Status"):
 
     @tasks.loop(seconds=INTERVALO)
     async def trocar_status(self):
-        tipo, texto = random.choice(STATUSES)
+        if not self._fila:
+            self._fila = list(STATUSES)
+            random.shuffle(self._fila)
+        tipo, texto = self._fila.pop()
 
         atividades = {
             "jogando":    discord.Game(name=texto),

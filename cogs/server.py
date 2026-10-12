@@ -67,7 +67,7 @@ def _embed_hub(guild: discord.Guild | None) -> discord.Embed:
 
 
 class Servidor(commands.Cog, name="Servidor"):
-    """hub do servidor + perfil completo."""
+    """hub do servidor + player completo."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -109,28 +109,42 @@ BARRA_CHEIA = "█"
 BARRA_VAZIA = "░"
 BARRA_CELULAS = 10
 
+# mesma ordem da loja: raridade mais alta = numero maior.
+ORDEM_RAR = {"comum": 0, "incomum": 1, "raro": 2, "épico": 3, "lendário": 4}
+
+# utc-3 fixo, mesmo do resto do bot.
+TZ = datetime.timezone(datetime.timedelta(hours=-3))
+
 
 async def _montar_perfil(membro: discord.Member) -> discord.Embed:
-    xp, nivel = await asyncio.to_thread(data.buscar_xp, membro.id)
+    # leituras independentes primeiro, tudo junto.
+    hoje = datetime.datetime.now(TZ).date().isoformat()
+    (xp, nivel), (dima, amet, aura), colecao, (pv, pd, pe), (nap, nvit), doces, ultimo_daily, feitas, (sdias, _) = await asyncio.gather(
+        asyncio.to_thread(data.buscar_xp, membro.id),
+        asyncio.to_thread(data.buscar_saldo, membro.id),
+        asyncio.to_thread(data.buscar_colecao, membro.id),
+        asyncio.to_thread(data.buscar_ptp, membro.id),
+        asyncio.to_thread(data.buscar_bet, membro.id),
+        asyncio.to_thread(data.buscar_doces, membro.id),
+        asyncio.to_thread(data.buscar_daily, membro.id),
+        asyncio.to_thread(data.feitas_no_dia, membro.id, hoje),
+        asyncio.to_thread(data.buscar_streak, membro.id),
+    )
     xp_prox = data.xp_para_proximo(nivel)
     celulas = int((xp / xp_prox) * BARRA_CELULAS)
     progresso = BARRA_CHEIA * celulas + BARRA_VAZIA * (BARRA_CELULAS - celulas)
 
     embed = discord.Embed(
         title=f"👤 player {membro.display_name}",
+        description=f"nível **{nivel}** · `{xp}/{xp_prox}`\n`{progresso}`",
         color=visual.PRIMARY,
-    )
-    embed.add_field(
-        name="nível",
-        value=f"**{nivel}** · `{xp}/{xp_prox}`\n`{progresso}`",
-        inline=False,
     )
 
     # deadlock: so se vinculado, com heroi top junto.
     steam = await asyncio.to_thread(data.buscar_deadlock, membro.id)
     if steam is None:
         embed.add_field(
-            name="deadlock", value="não vinculado — usa `>vincular`.", inline=False
+            name="🎮 deadlock", value="não vinculado — usa `>vincular`.", inline=False
         )
     else:
         try:
@@ -153,34 +167,58 @@ async def _montar_perfil(membro: discord.Member) -> discord.Embed:
                     f"({melhor.get('matches_played', 0)} partidas, "
                     f"{melhor.get('wins', 0)} vitórias)"
                 )
-            embed.add_field(name="deadlock", value=linha, inline=False)
+            embed.add_field(name="🎮 deadlock", value=linha, inline=False)
         except deadlock_api.DeadlockAPIError:
-            embed.add_field(name="deadlock", value="api fora do ar agora.", inline=False)
+            embed.add_field(name="🎮 deadlock", value="api fora do ar agora.", inline=False)
 
-    diamantes, ametista, aura = await asyncio.to_thread(data.buscar_saldo, membro.id)
-    hoje = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    ultimo = await asyncio.to_thread(data.buscar_daily, membro.id)
-    daily = "já resgatado" if ultimo == hoje else "disponível!"
+    daily = "já resgatado" if ultimo_daily == hoje else "disponível!"
     embed.add_field(
-        name="economia",
-        value=f"{visual.DIAMANTE} {diamantes} · {visual.AMETHYST} {ametista}"
+        name="💎 economia",
+        value=f"{visual.DIAMANTE} {dima} · {visual.AMETHYST} {amet} · 🍬 {doces}"
         + (f" · aura {aura}" if aura else "")
         + f"\ndaily: {daily}",
         inline=False,
     )
 
-    colecao = await asyncio.to_thread(data.buscar_colecao, membro.id)
+    # colecao com o mais raro em destaque. nomes bonitos vêm da loja.
+    from cogs.economia import AXOLOTLS, ALIAS_AXOLOTL
+
     if colecao:
         total = sum(q for _, q in colecao)
-        top = sorted(colecao, key=lambda c: c[1], reverse=True)[:3]
+        itens = [(ALIAS_AXOLOTL.get(a, a), q) for a, q in colecao]
+        raro = max(
+            itens,
+            key=lambda c: (ORDEM_RAR.get(AXOLOTLS.get(c[0], {}).get("rar", ""), -1), c[1]),
+        )
+        nome_raro = AXOLOTLS.get(raro[0], {"nome": raro[0], "rar": "?"})
+        top = sorted(itens, key=lambda c: c[1], reverse=True)[:3]
         embed.add_field(
-            name="coleção",
-            value=f"{len(colecao)} tipos, {total} no total — "
+            name="🪸 coleção",
+            value=f"{len(itens)}/{len(AXOLOTLS)} espécies · {total} no total\n"
+            f"mais raro: **{nome_raro['nome']}** ({nome_raro['rar']}) x{raro[1]}\n"
             + ", ".join(f"{a} x{q}" for a, q in top),
             inline=False,
         )
     else:
-        embed.add_field(name="coleção", value="vazia — gira com `>roll`.", inline=False)
+        embed.add_field(name="🪸 coleção", value="vazia — gira com `>roll`.", inline=False)
+
+    # jogos: ptp + bet + diarias de hoje.
+    total_ptp = pv + pd + pe
+    if total_ptp:
+        winrate = round(pv / total_ptp * 100)
+        linha_ptp = f"**{pv}**V **{pd}**D **{pe}**E · {winrate}%"
+    else:
+        linha_ptp = "sem jogada — `>ptp`."
+    if nap:
+        taxa = round(nvit / nap * 100)
+        linha_bet = f"**{nap}** apostas · **{nvit}** vitórias ({taxa}%)"
+    else:
+        linha_bet = "sem aposta — `>bet`."
+    embed.add_field(
+        name="🎲 jogos",
+        value=f"ptp: {linha_ptp}\nbet: {linha_bet}\ndiárias: **{len(feitas)}/3** hoje · 🔥 **{sdias}**",
+        inline=False,
+    )
 
     # servidor: so faz sentido dentro do servidor.
     if isinstance(membro, discord.Member) and membro.joined_at is not None:
@@ -189,7 +227,7 @@ async def _montar_perfil(membro: discord.Member) -> discord.Embed:
         linha = f"aqui desde **{entrou}**"
         if cargos:
             linha += f" · cargo top **{max(cargos, key=lambda c: c.position).name}**"
-        embed.add_field(name="servidor", value=linha, inline=False)
+        embed.add_field(name="🖥️ servidor", value=linha, inline=False)
 
     embed.set_thumbnail(url=membro.display_avatar.url)
     embed.set_footer(text=visual.FOOTER)
