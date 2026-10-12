@@ -73,6 +73,10 @@ def _get_json(caminho: str, query: dict | None = None) -> object:
         raise DeadlockAPIError(f"http {e.code}") from e
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         raise DeadlockAPIError(f"{type(e).__name__}") from e
+    except Exception as e:
+        # ssl, http.client e afins: vira erro amigavel em vez de
+        # estourar `KeyError`/`OSError` cru no chat.
+        raise DeadlockAPIError(f"{type(e).__name__}") from e
 
 
 # ─── steam id ───
@@ -131,8 +135,11 @@ def resolver_steam(texto: str) -> tuple[int, str | None]:
         {"search_query": texto.strip(), "limit": 5},
     )
     if isinstance(dados, list) and dados:
-        primeiro = dados[0]
-        return int(primeiro["account_id"]), primeiro.get("personaname")
+        try:
+            primeiro = dados[0]
+            return int(primeiro["account_id"]), primeiro.get("personaname")
+        except (KeyError, TypeError, ValueError, IndexError):
+            pass
     raise DeadlockAPIError("perfil nao encontrado")
 
 
@@ -416,7 +423,14 @@ def resumo_geral(hero_stats: list) -> dict:
 def resumo_7d(match_history: list, dias: int = 7) -> dict:
     """filtra por start_time e agrega. vitoria = player_match_outcome == 1."""
     corte = time.time() - dias * 86400
-    jogos = [m for m in match_history if float(m.get("start_time", 0) or 0) >= corte]
+
+    def _inicio(m: dict) -> float:
+        try:
+            return float(m.get("start_time", 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    jogos = [m for m in match_history if _inicio(m) >= corte]
     partidas = len(jogos)
     vitorias = sum(1 for m in jogos if int(m.get("player_match_outcome", 0) or 0) == 1)
     k = sum(int(m.get("player_kills", 0) or 0) for m in jogos)

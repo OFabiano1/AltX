@@ -137,9 +137,9 @@ async def _montar_perfil(membro: discord.Member) -> discord.Embed:
             rank = await asyncio.to_thread(deadlock_api.buscar_rank, steam)
             ranks = await asyncio.to_thread(deadlock_api.buscar_ranks)
             tier = int(rank.get("rank", 0) or 0)
-            sub = int(rank.get("subrank", 0) or 0)
             nome = ranks.get(tier, "Obscurus")
-            rank_txt = "obscurus" if tier <= 0 else f"{nome} {sub}".strip()
+            # texto em pt + romano igual o >rank e o >stats.
+            rank_txt = deadlock_api.info_rank(rank, deadlock_api.NOMES_PT)["rank_txt"]
             perfil = await asyncio.to_thread(deadlock_api.buscar_steam_profile, steam)
             persona = perfil.get("personaname") or f"steam {steam}"
             linha = f"{visual.deadlock_rank_emoji(nome)}{persona} · {rank_txt}"

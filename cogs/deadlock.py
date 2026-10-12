@@ -143,18 +143,16 @@ def _carregar_stats(account_id: int, periodo: str) -> dict:
         hero_assets = f_heroes.result()
         rank_assets = f_ranks.result()
     tier = int(rank.get("rank", 0) or 0)
-    sub = int(rank.get("subrank", 0) or 0)
-    nome_rank = (rank_assets.get(tier) or {}).get("nome", "Obscurus")
-    if tier <= 0:
-        rank_txt = "obscurus"
-    else:
-        rank_txt = f"{nome_rank} {sub}".strip()
+    # nome em ingles so pro emoji (chave estavel da config),
+    # texto em pt + romano igual o >rank (via info_rank).
+    nome_en = (rank_assets.get(tier) or {}).get("nome", "Obscurus")
+    rank_txt = deadlock_api.info_rank(rank, deadlock_api.NOMES_PT)["rank_txt"]
     return {
         "persona": perfil.get("personaname") or f"steam {account_id}",
         "profileurl": perfil.get("profileurl")
         or f"https://steamcommunity.com/profiles/{deadlock_api.account_para_steam64(account_id)}",
         "rank_txt": rank_txt,
-        "rank_emoji": visual.deadlock_rank_emoji(nome_rank),
+        "rank_emoji": visual.deadlock_rank_emoji(nome_en),
         "tier": tier,
         "rank_img": (rank_assets.get(tier) or {}).get("imagem"),
         "resumo": resumo,

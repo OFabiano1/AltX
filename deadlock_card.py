@@ -403,13 +403,23 @@ def render(pacote: dict, periodo: str) -> bytes:
                 fill=TEXTO_APAGADO,
             )
             y += 52
-            desenho.text(
-                (MARGEM, y),
-                "HERÓIS PRINCIPAIS",
-                font=fonte_linha,
-                fill=TEXTO_APAGADO,
-            )
-            y += 36
+            # sem partidas a secao saia com titulo e nada embaixo.
+            if not top:
+                desenho.text(
+                    (MARGEM, y),
+                    "sem partidas registradas na api pra essa conta.",
+                    font=fonte_linha,
+                    fill=TEXTO_APAGADO,
+                )
+                y += 36
+            else:
+                desenho.text(
+                    (MARGEM, y),
+                    "HERÓIS PRINCIPAIS",
+                    font=fonte_linha,
+                    fill=TEXTO_APAGADO,
+                )
+                y += 36
             max_partidas = max([m for _, m, _ in top], default=1)
             fonte_heroi = pegar("texto", 28)
             for hid, partidas, vitorias in top:
