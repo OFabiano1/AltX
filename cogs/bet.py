@@ -3,6 +3,7 @@
 # slots classico (777 e combos) + cara ou coroa.
 
 import asyncio
+import logging
 import random
 from math import comb
 
@@ -12,6 +13,8 @@ from discord.ext import commands
 
 import visual
 import data
+
+log = logging.getLogger("alt.bet")
 
 # ─── apostas ───
 
@@ -254,9 +257,18 @@ def _embed_bet(barra: str) -> discord.Embed:
 MINAS_TOTAL = 20  # 5x4 + retirar (limite do discord: 25 por msg).
 MINAS_MIN, MINAS_MAX, MINAS_PADRAO = 1, 15, 3
 
-# dono_id -> {moeda, valor, minas:set, abertos:set, view}.
-# 1 jogo por pessoa: comecar outro reembolsa o anterior.
-JOGOS_MINES: dict[int, dict] = {}
+JOGO_EXPIRADO = (
+    "esse jogo acabou! se foi restart, devolvi tua aposta. "
+    "abre outro com `>mines`."
+)
+
+
+async def _reembolsar(user_id: int, jogo: dict) -> None:
+    """devolve a aposta sem registrar (reembolso nao e aposta)."""
+    if jogo["moeda"] == "dima":
+        await asyncio.to_thread(data.adicionar_diamantes, user_id, jogo["valor"])
+    else:
+        await asyncio.to_thread(data.adicionar_ametista, user_id, jogo["valor"])
 
 
 def _mult_mines(abertos: int, minas: int) -> float:
@@ -303,33 +315,22 @@ def _pintar_mines(view: discord.ui.View, jogo: dict, revelar_tudo: bool = False)
 
 
 async def _comecar_mines(user_id: int, moeda: str, valor: int, minas: int):
-    """cobra (reembolsando jogo antigo) e cria o jogo. None se sem saldo."""
-    velho = JOGOS_MINES.pop(user_id, None)
+    """cobra (reembolsando jogo antigo) e salva no banco. None se sem saldo."""
+    velho = await asyncio.to_thread(data.remover_mines, user_id)
     if velho is not None:
-        # reembolso nao e aposta: devolve sem registrar.
-        if velho["moeda"] == "dima":
-            await asyncio.to_thread(data.adicionar_diamantes, user_id, velho["valor"])
-        else:
-            await asyncio.to_thread(data.adicionar_ametista, user_id, velho["valor"])
+        await _reembolsar(user_id, velho)
     if not await _cobrar(user_id, moeda, valor):
         return None
-    view = MinesView(user_id)
-    JOGOS_MINES[user_id] = {
-        "moeda": moeda,
-        "valor": valor,
-        "minas": set(random.sample(range(MINAS_TOTAL), minas)),
-        "abertos": set(),
-        "view": view,
-    }
-    return view
+    await asyncio.to_thread(
+        data.salvar_mines, user_id, moeda, valor, set(random.sample(range(MINAS_TOTAL), minas))
+    )
+    return MinesView(user_id)
 
 
 async def _cavar(interaction: discord.Interaction, dono_id: int, idx: int):
-    jogo = JOGOS_MINES.get(dono_id)
+    jogo = await asyncio.to_thread(data.buscar_mines, dono_id)
     if jogo is None:
-        await interaction.response.send_message(
-            "esse jogo expirou! abre outro com `>mines`.", ephemeral=True
-        )
+        await interaction.response.send_message(JOGO_EXPIRADO, ephemeral=True)
         return
     if interaction.user.id != dono_id:
         await interaction.response.send_message(
@@ -340,12 +341,15 @@ async def _cavar(interaction: discord.Interaction, dono_id: int, idx: int):
         # 💎 aberto = retirar.
         await _sacar_jogo(dono_id, interaction)
         return
-    jogo["abertos"].add(idx)
-    view = jogo["view"]
+    jogo = await asyncio.to_thread(data.abrir_mines, dono_id, idx)
+    if jogo is None:
+        await interaction.response.send_message(JOGO_EXPIRADO, ephemeral=True)
+        return
+    view = MinesView(dono_id)
     if idx in jogo["minas"]:
         # bomba: mostra tudo e depois some so os botoes, o embed fica.
         await asyncio.to_thread(data.registrar_aposta, dono_id, False)
-        JOGOS_MINES.pop(dono_id, None)
+        await asyncio.to_thread(data.remover_mines, dono_id)
         fim = f"💣 **bum!** perdeu **{jogo['valor']}** {_moeda_emoji(jogo['moeda'])}."
         _pintar_mines(view, jogo, revelar_tudo=True)
         await interaction.response.edit_message(
@@ -370,16 +374,13 @@ async def _cavar(interaction: discord.Interaction, dono_id: int, idx: int):
 
 async def _sacar_jogo(dono_id: int, interaction: discord.Interaction, auto: bool = False):
     """retira com o multi atual. botoes saem, embed fica."""
-    jogo = JOGOS_MINES.pop(dono_id, None)
+    jogo = await asyncio.to_thread(data.remover_mines, dono_id)
     if jogo is None:
-        await interaction.response.send_message(
-            "esse jogo expirou! abre outro com `>mines`.", ephemeral=True
-        )
+        await interaction.response.send_message(JOGO_EXPIRADO, ephemeral=True)
         return
     mult = _mult_mines(len(jogo["abertos"]), len(jogo["minas"]))
     premio = int(jogo["valor"] * mult)
     await _premiar(dono_id, jogo["moeda"], premio, jogo["valor"])
-    _pintar_mines(jogo["view"], jogo, revelar_tudo=True)
     fim = (
         f"🧹 **limpou tudo!** sacou **{premio}** {_moeda_emoji(jogo['moeda'])} (**{mult:.2f}x**)."
         if auto
@@ -430,7 +431,11 @@ class MinesView(discord.ui.View):
         await _sacar_jogo(self.dono_id, interaction)
 
     async def on_timeout(self):
-        JOGOS_MINES.pop(self.dono_id, None)
+        # 5min parado: devolve a aposta em vez de sumir com ela.
+        jogo = await asyncio.to_thread(data.remover_mines, self.dono_id)
+        if jogo is not None:
+            await _reembolsar(self.dono_id, jogo)
+            log.info("mines: reembolso por timeout pra %d", self.dono_id)
 
 
 class Bet(commands.Cog, name="Axolotl Bet"):
@@ -438,6 +443,23 @@ class Bet(commands.Cog, name="Axolotl Bet"):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # restart no meio do jogo: devolve as apostas presas.
+        try:
+            pendentes = await asyncio.to_thread(data.listar_mines)
+        except Exception:
+            log.exception("mines: falha ao listar pendentes no boot")
+            return
+        for jogo in pendentes:
+            try:
+                await _reembolsar(jogo["user_id"], jogo)
+                await asyncio.to_thread(data.remover_mines, jogo["user_id"])
+            except Exception:
+                log.exception("mines: falha ao reembolsar %d", jogo["user_id"])
+        if pendentes:
+            log.info("mines: %d aposta(s) reembolsada(s) pos-restart", len(pendentes))
 
     # ─── >bet ───
     @commands.command(name="bet")
@@ -623,15 +645,16 @@ class Bet(commands.Cog, name="Axolotl Bet"):
                 "ex: `>mines 50 3`."
             )
             return
-        tinha = ctx.author.id in JOGOS_MINES
+        tinha = await asyncio.to_thread(data.buscar_mines, ctx.author.id)
         view = await _comecar_mines(ctx.author.id, moeda, valor, minas)
         if view is None:
             await ctx.send(f"⛏️ precisa de **{valor}** {_moeda_emoji(moeda)} pra entrar!")
             return
+        jogo = await asyncio.to_thread(data.buscar_mines, ctx.author.id)
         msg = f"{ctx.author.mention} reembolsei o jogo anterior. " if tinha else ""
         await ctx.send(
             content=msg or None,
-            embed=_embed_mines(JOGOS_MINES[ctx.author.id]),
+            embed=_embed_mines(jogo),
             view=view,
         )
 
@@ -655,7 +678,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         minas: app_commands.Range[int, 1, 15] = 3,
     ):
         """versão slash do >mines."""
-        tinha = interaction.user.id in JOGOS_MINES
+        tinha = await asyncio.to_thread(data.buscar_mines, interaction.user.id)
         view = await _comecar_mines(interaction.user.id, moeda, valor, minas)
         if view is None:
             await interaction.response.send_message(
@@ -663,10 +686,11 @@ class Bet(commands.Cog, name="Axolotl Bet"):
                 ephemeral=True,
             )
             return
+        jogo = await asyncio.to_thread(data.buscar_mines, interaction.user.id)
         msg = "reembolsei o jogo anterior. " if tinha else ""
         await interaction.response.send_message(
             content=msg or None,
-            embed=_embed_mines(JOGOS_MINES[interaction.user.id]),
+            embed=_embed_mines(jogo),
             view=view,
         )
 

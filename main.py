@@ -31,6 +31,7 @@ COGS = (
     "cogs.server",
     "cogs.github",
     "cogs.daily",
+    "cogs.osu",
     "cogs.bet",
 )
 
@@ -177,6 +178,7 @@ ORDEM_AJUDA = (
     "tickets",
     "Mudae",
     "Halloween",
+    "osu!",
     "Status",
 )
 
@@ -206,6 +208,7 @@ CATEGORIA_EMOJIS = {
     "Tickets": "🎟️",
     "Mudae": "🃏",
     "Halloween": "🎃",
+    "osu!": "🎵",
 }
 
 

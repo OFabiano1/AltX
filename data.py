@@ -160,6 +160,14 @@ CREATE TABLE IF NOT EXISTS buffs (
     expira_em REAL NOT NULL,
     PRIMARY KEY (user_id, tipo)
 );
+
+CREATE TABLE IF NOT EXISTS mines_jogos (
+    user_id INTEGER PRIMARY KEY,
+    moeda   TEXT NOT NULL,
+    valor   INTEGER NOT NULL,
+    minas   TEXT NOT NULL,
+    abertos TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -927,6 +935,85 @@ def buffs_ativos(user_id: int) -> dict[str, int]:
 def buff_ativo(user_id: int, tipo: str) -> int:
     """segundos restantes do buff, 0 se acabou."""
     return buffs_ativos(user_id).get(tipo, 0)
+
+
+# ─── mines (jogo persistido: restart devolve a aposta) ───
+def _csv(vals: set[int]) -> str:
+    return ",".join(str(v) for v in sorted(vals))
+
+
+def _de_csv(texto: str) -> set[int]:
+    return {int(x) for x in (texto or "").split(",") if x.strip().isdigit()}
+
+
+def _linha_mines(row) -> dict:
+    return {
+        "user_id": row["user_id"],
+        "moeda": row["moeda"],
+        "valor": row["valor"],
+        "minas": _de_csv(row["minas"]),
+        "abertos": _de_csv(row["abertos"]),
+    }
+
+
+def salvar_mines(user_id: int, moeda: str, valor: int, minas: set[int]) -> None:
+    """guarda jogo novo (zera os abertos)."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "INSERT INTO mines_jogos (user_id, moeda, valor, minas, abertos) "
+            "VALUES (?, ?, ?, ?, '') ON CONFLICT(user_id) DO UPDATE SET "
+            "moeda = excluded.moeda, valor = excluded.valor, "
+            "minas = excluded.minas, abertos = ''",
+            (user_id, moeda, valor, _csv(minas)),
+        )
+
+
+def buscar_mines(user_id: int) -> dict | None:
+    with _lock, _conectar() as conn:
+        row = conn.execute(
+            "SELECT * FROM mines_jogos WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    return _linha_mines(row) if row is not None else None
+
+
+def abrir_mines(user_id: int, idx: int) -> dict | None:
+    """marca a pedra aberta. None se sem jogo."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT * FROM mines_jogos WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        abertos = _de_csv(row["abertos"]) | {idx}
+        conn.execute(
+            "UPDATE mines_jogos SET abertos = ? WHERE user_id = ?",
+            (_csv(abertos), user_id),
+        )
+        jogo = _linha_mines(row)
+        jogo["abertos"] = abertos
+        return jogo
+
+
+def remover_mines(user_id: int) -> dict | None:
+    """tira o jogo e devolve ele (pra reembolsar). None se nao tinha."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT * FROM mines_jogos WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM mines_jogos WHERE user_id = ?", (user_id,))
+        return _linha_mines(row)
+
+
+def listar_mines() -> list[dict]:
+    """todos os jogos abertos (reembolso pos-restart)."""
+    with _lock, _conectar() as conn:
+        rows = conn.execute("SELECT * FROM mines_jogos").fetchall()
+    return [_linha_mines(r) for r in rows]
 
 
 # ─── snapshot do player (tudo numa conexao so: abre rapido) ───
