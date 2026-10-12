@@ -66,7 +66,7 @@ class AutoResponse(commands.Cog):
             )
             if total == 1:
                 await message.channel.send(
-                    f"{visual.AXOLOTL} {saudacao}, {message.author.mention}! {visual.emote()}"
+                    f"{saudacao}, {message.author.mention}! {visual.emote()}"
                 )
 
         # repost do gif automaticamente
