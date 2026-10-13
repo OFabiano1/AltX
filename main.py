@@ -86,6 +86,11 @@ async def on_command_error(ctx: commands.Context, erro: commands.CommandError):
     if isinstance(erro, commands.CheckFailure):
         await ctx.send("sem permissão pra isso!")
         return
+    if isinstance(erro, commands.BadArgument):
+        # ex: MemberNotFound ("50" no lugar de @membro). cobre conversao errada
+        # em qualquer comando de uma vez so.
+        await ctx.send("não achei esse membro! marca com @ (ex: `>pay @ana 50`).")
+        return
     # mostra a causa raiz (ex: Forbidden) em vez do wrapper genérico.
     original = getattr(erro, "original", erro)
     log.exception("comando %s falhou: %s", ctx.command, original)
@@ -105,6 +110,8 @@ async def on_tree_error(
         texto = f"calma! tenta de novo em **{erro.retry_after:.0f}s**."
     elif isinstance(erro, app_commands.CheckFailure):
         texto = "sem permissão pra isso!"
+    elif isinstance(erro, app_commands.TransformerError):
+        texto = "não achei esse membro! escolhe na lista do comando."
     else:
         original = getattr(erro, "original", erro)
         log.exception("slash /%s falhou", interaction.command_name)
@@ -181,6 +188,7 @@ ORDEM_AJUDA = (
     "Mudae",
     "Halloween",
     "osu!",
+    "Backup",
     "Status",
 )
 
@@ -211,6 +219,7 @@ CATEGORIA_EMOJIS = {
     "Mudae": "🃏",
     "Halloween": "🎃",
     "osu!": "🎵",
+    "Backup": "💾",
 }
 
 
@@ -254,7 +263,11 @@ def _linhas_ajuda(travas: dict[str, str]) -> list[tuple[str, list[str]]]:
         slash_por_cat.setdefault(cat_slash.get(nome, "Geral"), []).append(cmd)
 
     chaves = [c for c in ORDEM_AJUDA if c in prefix or c in slash_por_cat]
-    chaves += [c for c in list(prefix) + list(slash_por_cat) if c not in chaves]
+    # extras: uma vez cada. o += com if nao bastava: chave nos dois dicts
+    # entrava 2x e o botao duplicado quebrava o envio (custom_id repetido).
+    for c in list(prefix) + list(slash_por_cat):
+        if c not in chaves:
+            chaves.append(c)
     secoes: list[tuple[str, list[str]]] = []
     for chave in chaves:
         linhas: list[str] = []

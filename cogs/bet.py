@@ -284,10 +284,10 @@ async def _reembolsar(user_id: int, jogo: dict) -> None:
 
 
 def _mult_mines(abertos: int, minas: int) -> float:
-    """multiplicador justo com ~5% pra banca."""
+    """multiplicador com ~20% pra banca (mines paga bem, mas nao chapa)."""
     if abertos <= 0:
         return 1.0
-    return comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * 0.95
+    return comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * 0.80
 
 
 def _embed_mines(jogo: dict, fim: str = "") -> discord.Embed:

@@ -6,7 +6,7 @@ buffs 2x (xp2, dima2, 30min) dobram o farm/xp por mensagem.
 ## diamante
 
 entra:
-- farm por msg: 5–15 (cooldown 60s, x2 com buff)
+- farm por msg: 2–6 (cooldown 60s, x2 com buff)
 - daily: 100
 - ptp: vitória 20, empate 5
 - doces: 50 por 30🍬 (`dima50`)

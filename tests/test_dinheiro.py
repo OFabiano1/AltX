@@ -141,7 +141,9 @@ def test_mines_mult():
 
     assert MINAS_TOTAL == 20
     assert _mult_mines(0, 3) == 1.0
-    assert _mult_mines(1, 15) > _mult_mines(1, 3) > 1.0
+    assert _mult_mines(1, 15) > _mult_mines(1, 3)
+    # min pra sacar eh 3: com 3 minas ainda lucra
+    assert _mult_mines(3, 3) > 1.0
 
 
 def test_apostas_simultaneas(banco):
