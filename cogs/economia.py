@@ -1068,6 +1068,40 @@ class Economia(commands.Cog, name="Economia"):
         embed.set_footer(text=f"{len(itens)}/{len(AXOLOTLS)} espécies • {visual.FOOTER}")
         await interaction.response.send_message(embed=embed)
 
+    # ─── >resetuser (admin) ───
+    @commands.command(name="resetuser")
+    @commands.has_permissions(administrator=True)
+    async def resetuser(self, ctx: commands.Context, membro: discord.Member = None):
+        """[admin] reseta tudo de um membro. ex: `>resetuser @ana`."""
+        if membro is None or membro.bot:
+            await ctx.send(f"{visual.AXOLOTL} uso: `>resetuser @membro` (sem bot).")
+            return
+        texto, view = await _texto_reset(ctx.author.id, membro.id)
+        if view is None:
+            await ctx.send(texto)
+            return
+        enviada = await ctx.send(content=texto, view=view)
+        view.message = enviada
+
+    # ─── /resetuser (admin) ───
+    @app_commands.command(name="resetuser", description="[admin] reseta tudo de um membro.")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(membro="quem vai zerar")
+    async def resetuser_slash(self, interaction: discord.Interaction, membro: discord.Member):
+        """versão slash do >resetuser."""
+        if membro.bot:
+            await interaction.response.send_message("nao da pra resetar bot.", ephemeral=True)
+            return
+        texto, view = await _texto_reset(interaction.user.id, membro.id)
+        if view is None:
+            await interaction.response.send_message(texto)
+            return
+        await interaction.response.send_message(content=texto, view=view)
+        try:
+            view.message = await interaction.original_response()
+        except Exception:
+            pass
+
     # ─── /topdima ───
     @app_commands.command(name="topdima", description="ranking dos mais ricos em diamantes.")
     async def topdima_slash(self, interaction: discord.Interaction):
@@ -1092,6 +1126,82 @@ class Economia(commands.Cog, name="Economia"):
         )
         embed.set_footer(text=visual.FOOTER)
         await interaction.response.send_message(embed=embed)
+
+
+# ─── reset (admin, com confirmação) ───
+class ResetView(discord.ui.View):
+    """confirma o reset: so quem chamou clica. expira em 60s."""
+
+    def __init__(self, dono_id: int, alvo_id: int):
+        super().__init__(timeout=60)
+        self.dono_id = dono_id
+        self.alvo_id = alvo_id
+        self.message = None
+
+    @discord.ui.button(label="confirmar", emoji="🧨", style=discord.ButtonStyle.danger)
+    async def sim(self, interaction: discord.Interaction, btn: discord.ui.Button):
+        if interaction.user.id != self.dono_id:
+            await interaction.response.send_message("so quem chamou confirma!", ephemeral=True)
+            return
+        apagados = await asyncio.to_thread(data.reset_usuario, self.alvo_id)
+        for b in self.children:
+            b.disabled = True
+        await interaction.response.edit_message(
+            content=f"{visual.AXOLOTL} reset feito: **{apagados}** registros apagados de <@{self.alvo_id}>.",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(label="cancelar", style=discord.ButtonStyle.secondary)
+    async def nao(self, interaction: discord.Interaction, btn: discord.ui.Button):
+        if interaction.user.id != self.dono_id:
+            await interaction.response.send_message("so quem chamou cancela!", ephemeral=True)
+            return
+        for b in self.children:
+            b.disabled = True
+        await interaction.response.edit_message(content="reset cancelado.", view=self)
+        self.stop()
+
+    async def on_timeout(self):
+        for b in self.children:
+            b.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(content="reset expirou.", view=self)
+            except Exception:
+                pass
+
+
+def _resumo_reset(snap: dict) -> str:
+    return (
+        f"nivel **{snap['nivel']}** · `{snap['xp']}` xp · "
+        f"{visual.DIAMANTE} **{snap['dima']}** · {visual.AMETHYST} **{snap['amet']}** · "
+        f"🍬 **{snap['doces']}** · streak **{snap['streak']}** · "
+        f"colecao **{len(snap['colecao'])}** · apostas **{snap['apostas']}**"
+    )
+
+
+# ─── texto do reset (com view ou sem nada) ───
+async def _texto_reset(dono_id: int, alvo_id: int) -> tuple[str, ResetView | None]:
+    """monta a confirmação + view. view None se ja ta zerado."""
+    from datetime import timedelta
+
+    tz = timezone(timedelta(hours=-3))
+    hoje = datetime.now(tz).date().isoformat()
+    snap = await asyncio.to_thread(data.snapshot, alvo_id, hoje)
+    vazio = (
+        snap["xp"] == 0 and snap["nivel"] == 1 and snap["dima"] == 0
+        and snap["amet"] == 0 and snap["doces"] == 0 and not snap["colecao"]
+        and snap["apostas"] == 0 and snap["streak"] == 0 and not snap["feitas"]
+        and snap["steam"] is None and not snap["buffs"]
+    )
+    if vazio:
+        return f"{visual.AXOLOTL} <@{alvo_id}> ja ta zerado, nada pra resetar.", None
+    return (
+        f"🧨 resetar <@{alvo_id}>?\n{_resumo_reset(snap)}\n"
+        "apaga xp, grana, colecao, doces, bet, streak, buffs, mines e vinculo deadlock. sem volta!",
+        ResetView(dono_id, alvo_id),
+    )
 
 
 async def setup(bot: commands.Bot):

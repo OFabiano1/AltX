@@ -1015,6 +1015,41 @@ def listar_mines() -> list[dict]:
     return [_linha_mines(r) for r in rows]
 
 
+# ─── reset total (admin: limpa o player sem deixar resto) ───
+def reset_usuario(user_id: int) -> int:
+    """apaga tudo do usuario em todas as tabelas. retorna linhas apagadas."""
+    alvos = [
+        ("xp", "user_id"),
+        ("ptp", "user_id"),
+        ("economia", "user_id"),
+        ("colecao", "user_id"),
+        ("auras", "user_id"),
+        ("mudae_reminder", "user_id"),
+        ("deadlock_links", "discord_id"),
+        ("bet_stats", "user_id"),
+        ("buffs", "user_id"),
+        ("mines_jogos", "user_id"),
+        ("doces", "user_id"),
+        ("diaria_feita", "user_id"),
+        ("streak", "user_id"),
+        ("contadores", "user_id"),
+        ("quest_progress", "user_id"),
+        ("voice_time", "user_id"),
+    ]
+    total = 0
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        for tabela, coluna in alvos:
+            try:
+                cur = conn.execute(
+                    f"DELETE FROM {tabela} WHERE {coluna} = ?", (user_id,)
+                )
+                total += cur.rowcount
+            except Exception:
+                continue
+    return total
+
+
 # ─── debito atomico (apostas, loja, caixas: checa e tira numa transacao) ───
 def debitar_moeda(user_id: int, moeda: str, valor: int) -> tuple[bool, int]:
     """tira valor se tiver saldo. retorna (ok, saldo_atual). Sem saldo = sem mudanca."""

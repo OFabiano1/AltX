@@ -11,7 +11,7 @@ entra:
 - ptp: vitória 20, empate 5
 - doces: 50 por 30🍬 (`dima50`)
 - caixa comum: bônus 40–80 (30%)
-- bet: slots até 10x, coin 2x, mines
+- bet: slots até 10x, coin 2x, mines max 10x / 5k
 
 sai:
 - `>box`: 150

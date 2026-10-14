@@ -236,7 +236,7 @@ def _embed_bet(barra: str) -> discord.Embed:
         value=(
             f"`{barra}mines <dima|amet> <1-1000>`\n"
             "20 pedras. quanto maior a aposta, mais bombas (3 a 15) e maior o multi. "
-            "min 3 abertas pra retirar, 💣 perde tudo."
+            "min 3 abertas pra retirar, 💣 perde tudo. max 10x / 5k."
         ),
         inline=False,
     )
@@ -283,11 +283,24 @@ async def _reembolsar(user_id: int, jogo: dict) -> None:
         await asyncio.to_thread(data.adicionar_ametista, user_id, jogo["valor"])
 
 
+# teto do mines: sem cap um hit paga 100k x e quebra a economia.
+MULT_MAX = 10.0
+PREMIO_MAX = 5000
+
+
 def _mult_mines(abertos: int, minas: int) -> float:
-    """multiplicador com ~20% pra banca (mines paga bem, mas nao chapa)."""
+    """multiplicador com ~20% pra banca, teto 10x (igual o slots)."""
     if abertos <= 0:
         return 1.0
-    return comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * 0.80
+    if MINAS_TOTAL - abertos < minas:
+        return MULT_MAX
+    mult = comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * 0.80
+    return min(mult, MULT_MAX)
+
+
+def _premio_mines(valor: int, abertos: int, minas: int) -> int:
+    """premio com teto 5k: trava a variancia sem matar a graça."""
+    return min(int(valor * _mult_mines(abertos, minas)), PREMIO_MAX)
 
 
 def _embed_mines(jogo: dict, fim: str = "") -> discord.Embed:
@@ -447,7 +460,7 @@ async def _sacar_nucleo(dono_id: int, interaction: discord.Interaction, auto: bo
             pass
         return
     mult = _mult_mines(len(jogo["abertos"]), len(jogo["minas"]))
-    premio = int(jogo["valor"] * mult)
+    premio = _premio_mines(jogo["valor"], len(jogo["abertos"]), len(jogo["minas"]))
     await _premiar(dono_id, jogo["moeda"], premio, jogo["valor"])
     fim = (
         f"🧹 **limpou tudo!** sacou **{premio}** {_moeda_emoji(jogo['moeda'])} (**{mult:.2f}x**)."
