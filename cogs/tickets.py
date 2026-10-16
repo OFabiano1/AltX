@@ -26,6 +26,34 @@ TICKET_BANNER_URL = os.getenv(
 AUTO_ARCHIVE = 10080
 
 
+def _tem_permissao_fechamento(canal, autor, cargo_mod) -> bool:
+    autor_id = getattr(autor, "id", None)
+    # discord owner id (quando presente e confiavel).
+    if autor_id is not None and getattr(canal, "owner_id", None) == autor_id:
+        return True
+    dono = getattr(canal, "owner", None)
+    if dono is not None and getattr(dono, "id", None) == autor_id:
+        return True
+    # registro duravel do dono do ticket (nao depende do nome).
+    try:
+        registrado = data.buscar_ticket_dono(canal.id)
+    except Exception:
+        registrado = None
+    if registrado is not None and registrado == autor_id:
+        return True
+    # compatibilidade com tickets antigos: id embutido no nome.
+    nome = getattr(canal, "name", "") or ""
+    if autor_id is not None and str(autor_id) in nome:
+        try:
+            data.salvar_ticket_dono(canal.id, autor_id)
+        except Exception:
+            pass
+        return True
+    if cargo_mod is not None and cargo_mod in (getattr(autor, "roles", []) or []):
+        return True
+    return False
+
+
 def _ids_configurados() -> bool:
     return bool(MOD_ROLE_ID and TICKET_CHANNEL_ID)
 
@@ -62,15 +90,18 @@ async def criar_ticket(interaction: discord.Interaction, emoji: str, label: str)
     if ticket is not None:
         await ticket.edit(archived=False, locked=False)
         await ticket.edit(name=nome_thread, auto_archive_duration=AUTO_ARCHIVE, invitable=False)
+        await data.salvar_ticket_dono(ticket.id, interaction.user.id)
         # reabriu: garante o dono dentro (pode ter saido da thread).
         await ticket.add_user(interaction.user)
     else:
         ticket = await canal.create_thread(
+
             name=nome_thread,
             type=discord.ChannelType.private_thread,
             auto_archive_duration=AUTO_ARCHIVE,
             invitable=False,
         )
+        await data.salvar_ticket_dono(ticket.id, interaction.user.id)
         # thread privada nao inclui o dono sozinha: sem isso ele nao ve o ticket.
         await ticket.add_user(interaction.user)
 
@@ -184,9 +215,7 @@ class Tickets(commands.Cog, name="tickets"):
             return
 
         cargo_mod = ctx.guild.get_role(MOD_ROLE_ID) if MOD_ROLE_ID else None
-        tem_permissao = str(ctx.author.id) in ctx.channel.name or (
-            cargo_mod is not None and cargo_mod in ctx.author.roles
-        )
+        tem_permissao = _tem_permissao_fechamento(ctx.channel, ctx.author, cargo_mod)
 
         if not tem_permissao:
             await ctx.send("você não tem permissão para fechar este ticket!")
@@ -253,9 +282,7 @@ class Tickets(commands.Cog, name="tickets"):
             return
         cargo_mod = interaction.guild.get_role(MOD_ROLE_ID) if MOD_ROLE_ID else None
         autor = interaction.user
-        tem_permissao = str(autor.id) in interaction.channel.name or (
-            isinstance(autor, discord.Member) and cargo_mod is not None and cargo_mod in autor.roles
-        )
+        tem_permissao = _tem_permissao_fechamento(interaction.channel, autor, cargo_mod)
         if not tem_permissao:
             await interaction.response.send_message(
                 "você não tem permissão para fechar este ticket!", ephemeral=True

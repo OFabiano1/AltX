@@ -83,6 +83,11 @@ CREATE TABLE IF NOT EXISTS voz_fixa (
     channel_id INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ticket_owners (
+    thread_id INTEGER PRIMARY KEY,
+    user_id   INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS deadlock_links (
     discord_id INTEGER PRIMARY KEY,
     steam_id   INTEGER NOT NULL,
@@ -542,6 +547,35 @@ def voz_fixa(guild_id: int) -> int | None:
             "SELECT channel_id FROM voz_fixa WHERE guild_id = ?", (guild_id,)
         ).fetchone()
     return row["channel_id"] if row else None
+
+
+def salvar_ticket_dono(thread_id: int, user_id: int) -> None:
+    """record ticket owner so permission does not depend on thread name."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        # garante tabela em bancos antigos/testes sem init().
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ticket_owners ("
+            "thread_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO ticket_owners (thread_id, user_id) VALUES (?, ?) "
+            "ON CONFLICT(thread_id) DO UPDATE SET user_id = excluded.user_id",
+            (thread_id, user_id),
+        )
+
+
+def buscar_ticket_dono(thread_id: int) -> int | None:
+    """return stored ticket owner id or None."""
+    with _conectar() as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ticket_owners ("
+            "thread_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)"
+        )
+        row = conn.execute(
+            "SELECT user_id FROM ticket_owners WHERE thread_id = ?", (thread_id,)
+        ).fetchone()
+    return row["user_id"] if row else None
 
 
 # ─── vínculo deadlock (discord -> steam) ───
