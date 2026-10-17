@@ -51,6 +51,10 @@ def _tem_permissao_fechamento(canal, autor, cargo_mod) -> bool:
         return True
     if cargo_mod is not None and cargo_mod in (getattr(autor, "roles", []) or []):
         return True
+    # admins/moderadores com permissao de gerenciar threads também podem fechar.
+    perms = getattr(autor, "guild_permissions", None)
+    if perms is not None and (getattr(perms, "manage_threads", False) or getattr(perms, "administrator", False)):
+        return True
     return False
 
 
