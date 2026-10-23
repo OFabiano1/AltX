@@ -161,7 +161,8 @@ CREATE TABLE IF NOT EXISTS mines_jogos (
     moeda   TEXT NOT NULL,
     valor   INTEGER NOT NULL,
     minas   TEXT NOT NULL,
-    abertos TEXT NOT NULL DEFAULT ''
+    abertos TEXT NOT NULL DEFAULT '',
+    bet_id  INTEGER
 );
 """
 
@@ -978,25 +979,47 @@ def _de_csv(texto: str) -> set[int]:
 
 
 def _linha_mines(row) -> dict:
+    keys = row.keys() if hasattr(row, "keys") else []
     return {
         "user_id": row["user_id"],
         "moeda": row["moeda"],
         "valor": row["valor"],
         "minas": _de_csv(row["minas"]),
         "abertos": _de_csv(row["abertos"]),
+        "bet_id": row["bet_id"] if "bet_id" in keys else None,
     }
 
 
-def salvar_mines(user_id: int, moeda: str, valor: int, minas: set[int]) -> None:
+def proximo_numero_aposta() -> int:
+    """contador global de apostas (mines)."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT valor FROM contadores WHERE user_id = 0 AND dia = 'global' AND chave = 'mines'"
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO contadores (user_id, dia, chave, valor) VALUES (0, 'global', 'mines', 1)"
+            )
+            return 1
+        novo = row["valor"] + 1
+        conn.execute(
+            "UPDATE contadores SET valor = ? WHERE user_id = 0 AND dia = 'global' AND chave = 'mines'",
+            (novo,),
+        )
+        return novo
+
+
+def salvar_mines(user_id: int, moeda: str, valor: int, minas: set[int], bet_id: int | None = None) -> None:
     """guarda jogo novo (zera os abertos)."""
     with _lock, _conectar() as conn:
         conn.execute("BEGIN IMMEDIATE")
         conn.execute(
-            "INSERT INTO mines_jogos (user_id, moeda, valor, minas, abertos) "
-            "VALUES (?, ?, ?, ?, '') ON CONFLICT(user_id) DO UPDATE SET "
+            "INSERT INTO mines_jogos (user_id, moeda, valor, minas, abertos, bet_id) "
+            "VALUES (?, ?, ?, ?, '', ?) ON CONFLICT(user_id) DO UPDATE SET "
             "moeda = excluded.moeda, valor = excluded.valor, "
-            "minas = excluded.minas, abertos = ''",
-            (user_id, moeda, valor, _csv(minas)),
+            "minas = excluded.minas, abertos = '', bet_id = excluded.bet_id",
+            (user_id, moeda, valor, _csv(minas), bet_id),
         )
 
 
@@ -1318,6 +1341,11 @@ def init() -> None:
     """cria o schema e migra dados legados. idempotente."""
     with _lock, _conectar() as conn:
         conn.executescript(SCHEMA)
+        # migra mines antigo: adiciona coluna bet_id se faltar.
+        try:
+            conn.execute("ALTER TABLE mines_jogos ADD COLUMN bet_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
         # wal e sync persistem no arquivo, configura uma vez so aqui
         # em vez de repetir em toda conexao (toda msg de xp).
         conn.execute("PRAGMA journal_mode=WAL")

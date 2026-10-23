@@ -307,11 +307,20 @@ def _embed_mines(jogo: dict, fim: str = "") -> discord.Embed:
     """placar do jogo numa linha: bombas, multi e potencial."""
     mult = _mult_mines(len(jogo["abertos"]), len(jogo["minas"]))
     potencial = int(jogo["valor"] * mult)
-    desc = f"💣 {len(jogo['minas'])} · **{mult:.2f}x** · potencial **{potencial}** {_moeda_emoji(jogo['moeda'])}"
+    saldo = data.buscar_saldo(jogo["user_id"])
+    saldo_moeda = saldo[0] if jogo["moeda"] == "dima" else saldo[1]
+    titulo = "⛏️ mines"
+    if jogo.get("bet_id"):
+        titulo += f"  •  aposta #{jogo['bet_id']}"
+    desc = (
+        f"saldo **{saldo_moeda}** {_moeda_emoji(jogo['moeda'])} · "
+        f"aposta **{jogo['valor']}** · 💣 {len(jogo['minas'])} · "
+        f"**{mult:.2f}x** · potencial **{potencial}** {_moeda_emoji(jogo['moeda'])}"
+    )
     if fim:
         desc += f"\n{fim}"
     embed = discord.Embed(
-        title="⛏️ mines",
+        title=titulo,
         description=desc,
         color=visual.PRIMARY,
     )
@@ -323,10 +332,13 @@ def _pintar_mines(view: discord.ui.View, jogo: dict, revelar_tudo: bool = False)
     """atualiza os botoes: 💎 aberto, 💣 bomba, ⬜ fechado."""
     for b in view.children:
         cid = b.custom_id or ""
-        if cid == "mines:sacar":
+        if cid in ("mines:sacar", "mines:aleatorio"):
             b.disabled = revelar_tudo
             continue
-        idx = int(cid.split(":")[1])
+        try:
+            idx = int(cid.split(":")[1])
+        except (ValueError, IndexError):
+            continue
         if idx in jogo["abertos"]:
             bomba = idx in jogo["minas"]
             b.label = "💣" if bomba else "💎"
@@ -354,10 +366,13 @@ async def _comecar_mines_nucleo(user_id: int, moeda: str, valor: int):
     if not ok:
         return None
     minas = _minas_por_valor(valor)
+    bet_id = await asyncio.to_thread(data.proximo_numero_aposta)
     await asyncio.to_thread(
-        data.salvar_mines, user_id, moeda, valor, set(random.sample(range(MINAS_TOTAL), minas))
+        data.salvar_mines, user_id, moeda, valor, set(random.sample(range(MINAS_TOTAL), minas)), bet_id
     )
-    return MinesView(user_id)
+    view = MinesView(user_id)
+    view.bet_id = bet_id
+    return view
 
 
 async def _cavar(interaction: discord.Interaction, dono_id: int, idx: int):
@@ -499,6 +514,15 @@ class MinesView(discord.ui.View):
         )
         sacar.callback = self._sacar
         self.add_item(sacar)
+        aleatorio = discord.ui.Button(
+            label="aleatório",
+            emoji="🎲",
+            style=discord.ButtonStyle.primary,
+            custom_id="mines:aleatorio",
+            row=4,
+        )
+        aleatorio.callback = self._aleatorio
+        self.add_item(aleatorio)
 
     def _fabrica(self, idx: int):
         async def cavar(interaction: discord.Interaction):
@@ -518,6 +542,23 @@ class MinesView(discord.ui.View):
             return
         async with _trava_mines(self.dono_id):
             await _sacar_nucleo(self.dono_id, interaction)
+
+    async def _aleatorio(self, interaction: discord.Interaction):
+        if interaction.user.id != self.dono_id:
+            await interaction.response.send_message(
+                "esse jogo não é seu!", ephemeral=True
+            )
+            return
+        jogo = await asyncio.to_thread(data.buscar_mines, self.dono_id)
+        if jogo is None:
+            await interaction.response.send_message(JOGO_EXPIRADO, ephemeral=True)
+            return
+        disponiveis = [i for i in range(MINAS_TOTAL) if i not in jogo["abertos"]]
+        if not disponiveis:
+            await interaction.response.send_message("não tem pedra livre!", ephemeral=True)
+            return
+        idx = random.choice(disponiveis)
+        await _cavar(interaction, self.dono_id, idx)
 
     async def on_timeout(self):
         # 5min parado: devolve a aposta e tira os botoes (sem botao, sem erro).
