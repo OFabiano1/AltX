@@ -5,12 +5,30 @@ import pytest
 
 
 def test_daily_1x_por_dia(banco):
-    ok, dima, amet = banco.tentar_daily(1, 100, 2, "2099-01-01")
-    assert ok and (dima, amet) == (100, 2)
-    ok, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-01")
+    ok, dima, amet, doces = banco.tentar_daily(1, 100, 2, "2099-01-01")
+    assert ok and (dima, amet, doces) == (100, 2, 0)
+    ok, _, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-01")
     assert not ok
-    ok, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-02")
+    ok, _, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-02")
     assert ok
+
+
+def test_daily_doces_vao_juntas(banco):
+    banco.ganhar_doces(1, 10)
+    ok, dima, amet, doces = banco.tentar_daily(1, 100, 2, "2099-01-01", 20)
+    assert ok and (dima, amet, doces) == (100, 2, 30)
+    # resgate negado: nada muda — nem doces.
+    ok, dima2, amet2, doces2 = banco.tentar_daily(1, 100, 2, "2099-01-01", 20)
+    assert not ok and (dima2, amet2, doces2) == (100, 2, 30)
+    assert banco.buscar_doces(1) == 30
+
+
+def test_conquista_uma_vez(banco):
+    assert banco.dar_conquista(1, "halloween2026", "31/10/2026") is True
+    assert banco.dar_conquista(1, "halloween2026", "31/10/2026") is False
+    assert banco.dar_conquista(2, "halloween2026", "31/10/2026") is True
+    assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
+    assert banco.conquistas_de(3) == []
 
 
 def test_transferir(banco):

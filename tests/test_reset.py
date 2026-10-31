@@ -4,6 +4,7 @@
 
 def test_reset_limpa_tudo(banco):
     uid = 424242
+
     banco.ganhar_xp(uid, 500)
     banco.adicionar_diamantes(uid, 1000)
     banco.adicionar_ametista(uid, 50)
@@ -16,6 +17,7 @@ def test_reset_limpa_tudo(banco):
     banco.salvar_mines(uid, "dima", 100, {1, 2, 3})
     banco.vincular_deadlock(uid, 12345)
     banco.salvar_mudae(uid, 1, 1, 9999999999.0)
+    banco.dar_conquista(uid, "halloween2026", "31/10/2026")
     banco.marcar_feita(uid, "2099-01-01", "msg10")
     banco.salvar_streak(uid, 5, "2099-01-01")
     banco.somar_contador(uid, "2099-01-01", "msg", 10)
@@ -35,6 +37,7 @@ def test_reset_limpa_tudo(banco):
     assert banco.buscar_deadlock(uid) is None
     assert banco.buscar_streak(uid) == (0, "")
     assert banco.feitas_no_dia(uid, "2099-01-01") == []
+    assert banco.conquistas_de(uid) == []
 
 
 def test_reset_id_sem_nada_retorna_zero(banco):

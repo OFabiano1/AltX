@@ -143,6 +143,13 @@ CREATE TABLE IF NOT EXISTS doces (
     doces   INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS conquistas (
+    user_id      INTEGER NOT NULL,
+    conquista_id TEXT NOT NULL,
+    quando       TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, conquista_id)
+);
+
 CREATE TABLE IF NOT EXISTS bet_stats (
     user_id  INTEGER PRIMARY KEY,
     apostas  INTEGER NOT NULL DEFAULT 0,
@@ -393,10 +400,13 @@ def transferir_diamantes(origem: int, destino: int, qtd: int) -> tuple[bool, int
         return True, s_origem - qtd, s_dest + qtd
 
 
-def tentar_daily(user_id: int, dima: int, amet: int, hoje: str) -> tuple[bool, int, int]:
-    """tenta resgatar o daily. Retorna (ok, diamantes, ametista).
+def tentar_daily(
+    user_id: int, dima: int, amet: int, hoje: str, doces: int = 0
+) -> tuple[bool, int, int, int]:
+    """tenta resgatar o daily. Retorna (ok, diamantes, ametista, doces).
 
-    `hoje` é YYYY-MM-DD em UTC. Se last_daily == hoje, nega.
+    `hoje` é YYYY-MM-DD em UTC. Se last_daily == hoje, nega e nada muda.
+    Os doces caem na mesma transação das moedas — o daily fica inteiro ou null.
     """
     with _lock, _conectar() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -404,8 +414,12 @@ def tentar_daily(user_id: int, dima: int, amet: int, hoje: str) -> tuple[bool, i
             "SELECT diamantes, ametista, last_daily FROM economia WHERE user_id = ?",
             (user_id,),
         ).fetchone()
+        d_row = conn.execute(
+            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        doces_atual = d_row["doces"] if d_row else 0
         if row and row["last_daily"] == hoje:
-            return False, row["diamantes"], row["ametista"]
+            return False, row["diamantes"], row["ametista"], doces_atual
         d_total = (row["diamantes"] if row else 0) + dima
         a_total = (row["ametista"] if row else 0) + amet
         conn.execute(
@@ -415,7 +429,15 @@ def tentar_daily(user_id: int, dima: int, amet: int, hoje: str) -> tuple[bool, i
             "last_daily = excluded.last_daily",
             (user_id, d_total, a_total, hoje),
         )
-        return True, d_total, a_total
+        doces_total = doces_atual
+        if doces > 0:
+            doces_total += doces
+            conn.execute(
+                "INSERT INTO doces (user_id, doces) VALUES (?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET doces = excluded.doces",
+                (user_id, doces_total),
+            )
+        return True, d_total, a_total, doces_total
 
 
 def top_diamantes(limite: int = 10) -> list[tuple[int, int]]:
@@ -877,6 +899,30 @@ def top_doces(limite: int = 5) -> list[tuple[int, int]]:
     return [(r["user_id"], r["doces"]) for r in rows]
 
 
+# ─── conquistas ───
+def dar_conquista(user_id: int, conquista_id: str, quando: str = "") -> bool:
+    """marca a conquista. True se desbloqueou agora (primeira vez)."""
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO conquistas (user_id, conquista_id, quando) "
+            "VALUES (?, ?, ?)",
+            (user_id, conquista_id, quando),
+        )
+        return cur.rowcount > 0
+
+
+def conquistas_de(user_id: int) -> list[tuple[str, str]]:
+    """retorna [(conquista_id, quando)] na ordem de desbloqueio."""
+    with _conectar() as conn:
+        rows = conn.execute(
+            "SELECT conquista_id, quando FROM conquistas "
+            "WHERE user_id = ? ORDER BY rowid",
+            (user_id,),
+        ).fetchall()
+    return [(r["conquista_id"], r["quando"]) for r in rows]
+
+
 # ─── apostas (axolotl bet: so contagem, sem valor — dima e amet nao se somam) ───
 def registrar_aposta(user_id: int, venceu: bool) -> None:
     """soma 1 aposta (e 1 vitoria se venceu)."""
@@ -1087,6 +1133,7 @@ def reset_usuario(user_id: int) -> int:
         ("buffs", "user_id"),
         ("mines_jogos", "user_id"),
         ("doces", "user_id"),
+        ("conquistas", "user_id"),
         ("diaria_feita", "user_id"),
         ("streak", "user_id"),
         ("contadores", "user_id"),
@@ -1350,6 +1397,4 @@ def init() -> None:
         # em vez de repetir em toda conexao (toda msg de xp).
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        # conquistas desativadas: limpa a tabela onde existir (vale no deploy).
-        conn.execute("DROP TABLE IF EXISTS conquistas")
     migrar_xp_legado()
