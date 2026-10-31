@@ -56,6 +56,31 @@ def texto_mensagem(dias: int) -> str:
     return f"🎃 {visual.AXOLOTL} faltam **{dias} dias** pro halloween! 💚"
 
 
+# ─── conquistas de halloween ───
+# catalogo de exibicao. o >daily do dia 31/10/2026 concede a halloween2026;
+# data.py guarda (conquista_id, quando) e aqui alguém lista/bonita.
+
+CONQUISTAS = {
+    "halloween2026": {
+        "icone": "🎃",
+        "nome": "Halloween 2026",
+        "desc": "resgatou o daily no dia do halloween (31/10/2026)",
+    },
+}
+
+
+def linha_conquista(pares: list[tuple[str, str]]) -> list[str]:
+    """linhas pra embed: [('halloween2026', '31/10/2026')] -> ['🎃 **Halloween 2026** — 31/10/2026']."""
+    linhas = []
+    for cid, quando in pares:
+        info = CONQUISTAS.get(cid, {"icone": "🏅", "nome": cid})
+        if quando:
+            linhas.append(f"{info['icone']} **{info['nome']}** — {quando}")
+        else:
+            linhas.append(f"{info['icone']} **{info['nome']}**")
+    return linhas
+
+
 # doce por msg (min, max) + cooldown igual o do xp.
 DOCE_MIN = 1
 DOCE_MAX = 3
