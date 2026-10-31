@@ -11,3 +11,5 @@ venv/
 bot.log
 bot.log.err
 AGENTS.md
+.superpowers/
+.pytest_cache/
