@@ -7,7 +7,7 @@ buffs 2x (xp2, dima2, 30min) dobram o farm/xp por mensagem.
 
 entra:
 - farm por msg: 2–6 (cooldown 60s, x2 com buff)
-- daily: 100
+- daily: 100 · 31/10/2026: 150 (bônus do halloween)
 - ptp: vitória 20, empate 5
 - doces: 50 por 30🍬 (`dima50`)
 - caixa comum: bônus 40–80 (30%)
@@ -24,7 +24,7 @@ bet rtp: slots 0.575, coin 0.5 — a banca segura ~45% no longo prazo.
 ## ametista
 
 entra:
-- daily: 2
+- daily: 2 (31/10/2026: 3, bônus do halloween)
 - doces: 1 por 20🍬 (`ametista1`)
 - caixa rara: bônus 2–4 (30%)
 
@@ -40,6 +40,7 @@ se sobrar demais, subir preço do roll/caixarara. se faltar, evento de doces.
 ## doces
 
 entra: msg 1–3 (cooldown 60s, sem buff).
+- daily 31/10/2026: 20, na mesma transação do daily (+ conquista halloween 2026)
 
 sai (loja, direto, sem sorteio):
 - 20 = 1 ametista · 30 = 50 diamantes · 300 = bruxinho · 666 = demônio

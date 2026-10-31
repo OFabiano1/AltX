@@ -11,7 +11,7 @@ o bot oficial da **axolotl br** — sua comunidade na internet. de player pra pl
 | servidor | `>server` (hub) `>player` (`>perfil` ainda vale) + push do github no chat |
 | níveis | `>xp` `>ranking` |
 | jogos | `>ptp` (sem arg = hub com placar + top 5) `>placar` `>rankingptp` |
-| economia | `>saldo` `>daily` (100 dima + 2 amet) `>pay` `>loja` (auras/doces/caixas) `>buy` `>equipar` (`>aura` vale) `>auras` `>roll` (5 amet) `>colecao` (18 espécies) `>topdima` `>box` (150 dima, alias `>caixa`) `>caixarara` (15 amet) |
+| economia | `>saldo` `>daily` (100 dima + 2 amet; 31/10/2026 só: bônus 🎃 +50 dima, +1 amet, +20 doces, conquista Halloween 2026 no `>saldo`) `>pay` `>loja` (auras/doces/caixas) `>buy` `>equipar` (`>aura` vale) `>auras` `>roll` (5 amet) `>colecao` (18 espécies) `>topdima` `>box` (150 dima, alias `>caixa`) `>caixarara` (15 amet) |
 | doces | `>doces` (saldo + top 5) `>topdoces` (atalho) — loja: 20🍬=1 amet, 30🍬=50 dima, 300🍬=bruxinho, 666🍬=demônio |
 | bet | `>bet` (hub) `>slots` `>caraoucoroa` `>mines` (1–1000; derrota some, vitória fica) |
 | osu! | `>osu` (`>osu mania` pros outros modos) |
