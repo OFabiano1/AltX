@@ -31,6 +31,25 @@ def test_conquista_uma_vez(banco):
     assert banco.conquistas_de(3) == []
 
 
+def test_bonus_halloween_so_no_dia():
+    from datetime import datetime, timezone
+
+    from cogs.economia import bonus_hoje
+
+    # 09h de 31/10 em br.
+    a = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
+    assert bonus_hoje(a) == (50, 1, 20)
+    # 22h de 31/10 em br = 01h utc de 01/11: ainda vale.
+    b = datetime(2026, 11, 1, 1, 0, tzinfo=timezone.utc)
+    assert bonus_hoje(b) == (50, 1, 20)
+    # 00h de 01/11 em br = 03h utc: acabou.
+    c = datetime(2026, 11, 1, 3, 0, tzinfo=timezone.utc)
+    assert bonus_hoje(c) == (0, 0, 0)
+    # 21h de 30/10 em br (utc 31T00:00): ainda não.
+    d = datetime(2026, 10, 31, 0, 0, tzinfo=timezone.utc)
+    assert bonus_hoje(d) == (0, 0, 0)
+
+
 def test_transferir(banco):
     banco.adicionar_diamantes(1, 100)
     ok, s1, s2 = banco.transferir_diamantes(1, 2, 40)

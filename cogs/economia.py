@@ -1,7 +1,7 @@
 import asyncio
 import os
 import random
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import discord
 from discord import app_commands
@@ -9,10 +9,28 @@ from discord.ext import commands
 
 import visual
 import data
+from cogs.halloween import linha_conquista
 
 # ─── ganhos ───
 DAILY_DIAMANTES = 100
 DAILY_AMETISTA = 2
+
+# ─── halloween 2026: bônus do dia 31, 1x no >daily ───
+# Janela UTC-3 (mesmo fuso do countdown da cog halloween):
+# vale das 00:00 de 31/10 br até 23:59 de 31/10 br.
+DIA_HALLOWEEN = date(2026, 10, 31)
+FUSO_BR = timezone(timedelta(hours=-3))
+BONUS_HALLOWEEN_DIMA = 50
+BONUS_HALLOWEEN_AMET = 1
+BONUS_HALLOWEEN_DOCES = 20
+QUANDO_HALLOWEEN = "31/10/2026"
+
+
+def bonus_hoje(agora: datetime) -> tuple[int, int, int]:
+    """(dima_extra, amet_extra, doces) se hoje é 31/10/2026 em br, senão (0, 0, 0)."""
+    if agora.astimezone(FUSO_BR).date() == DIA_HALLOWEEN:
+        return BONUS_HALLOWEEN_DIMA, BONUS_HALLOWEEN_AMET, BONUS_HALLOWEEN_DOCES
+    return 0, 0, 0
 
 MSG_COOLDOWN = 60  # segundos
 MSG_DIMA_MIN = 2
@@ -443,42 +461,73 @@ class Economia(commands.Cog, name="Economia"):
         """veja seus diamantes, ametista, aura e coleção."""
         membro = membro or ctx.author
         # leituras independentes, roda junto.
-        (dima, amet, aura), colecao, buffs = await asyncio.gather(
+        (dima, amet, aura), colecao, buffs, conquistas = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, membro.id),
             asyncio.to_thread(data.buscar_colecao, membro.id),
             asyncio.to_thread(data.buffs_ativos, membro.id),
+            asyncio.to_thread(data.conquistas_de, membro.id),
         )
         total = sum(q for _, q in colecao)
-        await ctx.send(embed=_embed_saldo(membro, dima, amet, aura, total, buffs))
+        embed = _embed_saldo(membro, dima, amet, aura, total, buffs)
+        linhas_conq = linha_conquista(conquistas)
+        if linhas_conq:
+            embed.add_field(name="🏅 conquistas", value="\n".join(linhas_conq), inline=False)
+        await ctx.send(embed=embed)
 
     @app_commands.command(name="saldo", description="veja seus diamantes, ametista, aura e coleção.")
     async def saldo_slash(self, interaction: discord.Interaction):
         # leituras independentes, roda junto.
-        (dima, amet, aura), colecao, buffs = await asyncio.gather(
+        (dima, amet, aura), colecao, buffs, conquistas = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, interaction.user.id),
             asyncio.to_thread(data.buscar_colecao, interaction.user.id),
             asyncio.to_thread(data.buffs_ativos, interaction.user.id),
+            asyncio.to_thread(data.conquistas_de, interaction.user.id),
         )
         total = sum(q for _, q in colecao)
         membro = interaction.user
-        await interaction.response.send_message(
-            embed=_embed_saldo(membro, dima, amet, aura, total, buffs)
-        )
+        embed = _embed_saldo(membro, dima, amet, aura, total, buffs)
+        linhas_conq = linha_conquista(conquistas)
+        if linhas_conq:
+            embed.add_field(name="🏅 conquistas", value="\n".join(linhas_conq), inline=False)
+        await interaction.response.send_message(embed=embed)
 
     # ─── >daily / /daily ───
-    async def _daily(self, user_id: int) -> tuple[bool, int, int]:
-        hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        return await asyncio.to_thread(
-            data.tentar_daily, user_id, DAILY_DIAMANTES, DAILY_AMETISTA, hoje
+    async def _daily(self, user_id: int) -> tuple[bool, int, int, int, bool]:
+        """resgata o daily. retorna (ok, dima_total, amet_total, doces_total, festa)."""
+        agora = datetime.now(timezone.utc)
+        hoje = agora.strftime("%Y-%m-%d")
+        extra_dima, extra_amet, extra_doces = bonus_hoje(agora)
+        festa = extra_doces != 0
+        ok, dima, amet, doces = await asyncio.to_thread(
+            data.tentar_daily,
+            user_id,
+            DAILY_DIAMANTES + extra_dima,
+            DAILY_AMETISTA + extra_amet,
+            hoje,
+            extra_doces,
         )
+        if ok and festa:
+            await asyncio.to_thread(
+                data.dar_conquista, user_id, "halloween2026", QUANDO_HALLOWEEN
+            )
+        return ok, dima, amet, doces, festa
 
     @commands.command(name="daily")
     async def daily(self, ctx: commands.Context):
         """resgate diário: diamantes + ametista. 1x por dia."""
-        ok, dima, amet = await self._daily(ctx.author.id)
+        ok, dima, amet, doces, festa = await self._daily(ctx.author.id)
         if not ok:
             await ctx.send(
                 f"{visual.AXOLOTL} {ctx.author.mention} você já resgatou hoje! volta amanhã."
+            )
+            return
+        if festa:
+            await ctx.send(
+                f"🎃 {visual.AXOLOTL} {ctx.author.mention} resgatou "
+                f"**{DAILY_DIAMANTES + BONUS_HALLOWEEN_DIMA}** {visual.DIAMANTE} + "
+                f"**{DAILY_AMETISTA + BONUS_HALLOWEEN_AMET}** {visual.AMETHYST} + "
+                f"**{BONUS_HALLOWEEN_DOCES}** 🍬 bônus de halloween! "
+                "🏅 conquista **Halloween 2026** desbloqueada!"
             )
             return
         await ctx.send(
@@ -488,11 +537,20 @@ class Economia(commands.Cog, name="Economia"):
 
     @app_commands.command(name="daily", description="resgate diário: diamantes + ametista.")
     async def daily_slash(self, interaction: discord.Interaction):
-        ok, _, _ = await self._daily(interaction.user.id)
+        ok, _, _, _, festa = await self._daily(interaction.user.id)
         if not ok:
             await interaction.response.send_message(
                 f"{visual.AXOLOTL} você já resgatou hoje! volta amanhã.",
                 ephemeral=True,
+            )
+            return
+        if festa:
+            await interaction.response.send_message(
+                f"🎃 {visual.AXOLOTL} resgatado: "
+                f"**{DAILY_DIAMANTES + BONUS_HALLOWEEN_DIMA}** {visual.DIAMANTE} + "
+                f"**{DAILY_AMETISTA + BONUS_HALLOWEEN_AMET}** {visual.AMETHYST} + "
+                f"**{BONUS_HALLOWEEN_DOCES}** 🍬 bônus de halloween! "
+                "🏅 conquista **Halloween 2026** desbloqueada!"
             )
             return
         await interaction.response.send_message(
