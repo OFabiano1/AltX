@@ -31,6 +31,53 @@ def test_conquista_uma_vez(banco):
     assert banco.conquistas_de(3) == []
 
 
+def test_daily_concede_conquista_na_transacao(banco):
+    """pacote e conquista caem juntos: se um passou, os dois passaram."""
+    ok, dima, amet, doces = banco.tentar_daily(
+        1, 100, 2, "2099-01-01", 20, "halloween2026", "31/10/2026"
+    )
+    assert ok and (dima, amet, doces) == (100, 2, 20)
+    assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
+    # resgate sem conquista passada: banco limpo pro usuario 2.
+    banco.tentar_daily(2, 100, 2, "2099-01-01")
+    assert banco.conquistas_de(2) == []
+    # resgate negado (mesmo dia): conquista nao fica guardada meio-termo.
+    banco.tentar_daily(3, 100, 2, "2099-01-01")
+    banco.tentar_daily(3, 100, 2, "2099-01-01", 20, "halloween2026", "31/10/2026")
+    assert banco.conquistas_de(3) == []
+
+
+def test_daily_pacote_1x_por_pessoa(banco, monkeypatch):
+    """segundo daily (após virar o dia utc) paga o pacote de novo? nunca."""
+    import asyncio
+    from datetime import datetime as _dt, timezone
+
+    from cogs import economia as eco
+
+    # 09h de 31/10 em br: primeiro resgate, pacote completo.
+    class Relogio1:
+        @staticmethod
+        def now(tz=None):
+            return _dt(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(eco, "datetime", Relogio1)
+    cog = eco.Economia(None)
+    ok, dima, amet, doces, pacote = asyncio.run(cog._daily(1))
+    assert ok and (dima, amet, doces, pacote) == (150, 3, 20, True)
+    assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
+
+    # 22h de 31/10 em br = 01h utc de 01/11: daily novo, mas sem pacote.
+    class Relogio2:
+        @staticmethod
+        def now(tz=None):
+            return _dt(2026, 11, 1, 1, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(eco, "datetime", Relogio2)
+    ok, dima, amet, doces, pacote = asyncio.run(cog._daily(1))
+    assert ok and (dima, amet, doces, pacote) == (250, 5, 20, False)
+    assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
+
+
 def test_bonus_halloween_so_no_dia():
     from datetime import datetime, timezone
 

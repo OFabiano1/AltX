@@ -401,12 +401,19 @@ def transferir_diamantes(origem: int, destino: int, qtd: int) -> tuple[bool, int
 
 
 def tentar_daily(
-    user_id: int, dima: int, amet: int, hoje: str, doces: int = 0
+    user_id: int,
+    dima: int,
+    amet: int,
+    hoje: str,
+    doces: int = 0,
+    conquista_id: str = "",
+    quando: str = "",
 ) -> tuple[bool, int, int, int]:
     """tenta resgatar o daily. Retorna (ok, diamantes, ametista, doces).
 
     `hoje` é YYYY-MM-DD em UTC. Se last_daily == hoje, nega e nada muda.
     Os doces caem na mesma transação das moedas — o daily fica inteiro ou null.
+    `conquista_id` (opcional) é concedido nessa mesma transação, junto do resto.
     """
     with _lock, _conectar() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -436,6 +443,12 @@ def tentar_daily(
                 "INSERT INTO doces (user_id, doces) VALUES (?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET doces = excluded.doces",
                 (user_id, doces_total),
+            )
+        if conquista_id:
+            conn.execute(
+                "INSERT OR IGNORE INTO conquistas (user_id, conquista_id, quando) "
+                "VALUES (?, ?, ?)",
+                (user_id, conquista_id, quando),
             )
         return True, d_total, a_total, doces_total
 

@@ -493,11 +493,22 @@ class Economia(commands.Cog, name="Economia"):
 
     # ─── >daily / /daily ───
     async def _daily(self, user_id: int) -> tuple[bool, int, int, int, bool]:
-        """resgata o daily. retorna (ok, dima_total, amet_total, doces_total, festa)."""
+        """resgata o daily. retorna (ok, dima_total, amet_total, doces_total, pacote).
+
+        `pacote` = bônus de halloween concedido agora. vale 1x por pessoa:
+        quem já tem a conquista halloween2026 recebe o daily normal.
+        """
         agora = datetime.now(timezone.utc)
         hoje = agora.strftime("%Y-%m-%d")
         extra_dima, extra_amet, extra_doces = bonus_hoje(agora)
-        festa = extra_doces != 0
+        if extra_doces and any(
+            cid == "halloween2026"
+            for cid, _ in await asyncio.to_thread(data.conquistas_de, user_id)
+        ):
+            # o pacote é 1x por pessoa: o br 31/10 atravessa dois dias utc,
+            # e sem esse gate o daily das 21h pagaria tudo de novo.
+            extra_dima = extra_amet = extra_doces = 0
+        pacote = extra_doces != 0
         ok, dima, amet, doces = await asyncio.to_thread(
             data.tentar_daily,
             user_id,
@@ -505,23 +516,21 @@ class Economia(commands.Cog, name="Economia"):
             DAILY_AMETISTA + extra_amet,
             hoje,
             extra_doces,
+            "halloween2026" if pacote else "",
+            QUANDO_HALLOWEEN if pacote else "",
         )
-        if ok and festa:
-            await asyncio.to_thread(
-                data.dar_conquista, user_id, "halloween2026", QUANDO_HALLOWEEN
-            )
-        return ok, dima, amet, doces, festa
+        return ok, dima, amet, doces, pacote
 
     @commands.command(name="daily")
     async def daily(self, ctx: commands.Context):
         """resgate diário: diamantes + ametista. 1x por dia."""
-        ok, dima, amet, doces, festa = await self._daily(ctx.author.id)
+        ok, dima, amet, doces, pacote = await self._daily(ctx.author.id)
         if not ok:
             await ctx.send(
                 f"{visual.AXOLOTL} {ctx.author.mention} você já resgatou hoje! volta amanhã."
             )
             return
-        if festa:
+        if pacote:
             await ctx.send(
                 f"🎃 {visual.AXOLOTL} {ctx.author.mention} resgatou "
                 f"**{DAILY_DIAMANTES + BONUS_HALLOWEEN_DIMA}** {visual.DIAMANTE} + "
@@ -537,14 +546,14 @@ class Economia(commands.Cog, name="Economia"):
 
     @app_commands.command(name="daily", description="resgate diário: diamantes + ametista.")
     async def daily_slash(self, interaction: discord.Interaction):
-        ok, _, _, _, festa = await self._daily(interaction.user.id)
+        ok, _, _, _, pacote = await self._daily(interaction.user.id)
         if not ok:
             await interaction.response.send_message(
                 f"{visual.AXOLOTL} você já resgatou hoje! volta amanhã.",
                 ephemeral=True,
             )
             return
-        if festa:
+        if pacote:
             await interaction.response.send_message(
                 f"🎃 {visual.AXOLOTL} resgatado: "
                 f"**{DAILY_DIAMANTES + BONUS_HALLOWEEN_DIMA}** {visual.DIAMANTE} + "
