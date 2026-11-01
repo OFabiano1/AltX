@@ -110,7 +110,6 @@ CATEGORIAS = {
     "Economia":  "Economia",
     "Axolotl Bet": "Axolotl Bet",
     "Mudae":     "Mudae",
-    "Halloween": "Halloween",
     "osu!":      "osu!",
     "Deadlock":  "Deadlock",
     "Servidor":  "Servidor",

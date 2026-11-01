@@ -49,7 +49,7 @@ def test_views_sem_botao_duplicado():
         bet.BetView(1, "slots", "dima", 100),
         bet.MinesView(1),
         economia.CaixaView(1, False),
-        economia.LojaView([("Auras", None), ("Doces", None), ("Caixas", None)]),
+        economia.LojaView([("Auras", None), ("Caixas", None)]),
         deadlock.VincularView(),
     ]
     for v in views:

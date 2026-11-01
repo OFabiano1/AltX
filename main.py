@@ -26,7 +26,6 @@ COGS = (
     "cogs.tickets",
     "cogs.economia",
     "cogs.mudae",
-    "cogs.halloween",
     "cogs.deadlock",
     "cogs.voz",
     "cogs.server",
@@ -186,7 +185,6 @@ ORDEM_AJUDA = (
     "Axolotl Bet",
     "tickets",
     "Mudae",
-    "Halloween",
     "osu!",
     "Backup",
     "Status",
@@ -217,7 +215,6 @@ CATEGORIA_EMOJIS = {
     "Axolotl Bet": "🎰",
     "Tickets": "🎟️",
     "Mudae": "🃏",
-    "Halloween": "🎃",
     "osu!": "🎵",
     "Backup": "💾",
 }

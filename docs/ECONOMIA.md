@@ -1,15 +1,14 @@
 # economia do alt — de onde vem, pra onde vai
 
-moedas: diamante (base), ametista (escassa), doces (evento) e xp.
+moedas: diamante (base), ametista (escassa) e xp.
 buffs 2x (xp2, dima2, 30min) dobram o farm/xp por mensagem.
 
 ## diamante
 
 entra:
 - farm por msg: 2–6 (cooldown 60s, x2 com buff)
-- daily: 100 · 31/10/2026: 150 (bônus do halloween, 1x por pessoa)
+- daily: 100
 - ptp: vitória 20, empate 5
-- doces: 50 por 30🍬 (`dima50`)
 - caixa comum: bônus 40–80 (30%)
 - bet: slots até 10x, coin 2x, mines max 10x / 5k
 
@@ -24,8 +23,7 @@ bet rtp: slots 0.575, coin 0.5 — a banca segura ~45% no longo prazo.
 ## ametista
 
 entra:
-- daily: 2 (31/10/2026: 3, bônus do halloween)
-- doces: 1 por 20🍬 (`ametista1`)
+- daily: 2
 - caixa rara: bônus 2–4 (30%)
 
 sai:
@@ -35,15 +33,7 @@ sai:
 - bet: 1–1000 por aposta
 
 conta de bar: 1 daily = 40% de 1 roll. ametista é a moeda do gacha;
-se sobrar demais, subir preço do roll/caixarara. se faltar, evento de doces.
-
-## doces
-
-entra: msg 1–3 (cooldown 60s, sem buff).
-- daily 31/10/2026: 20, na mesma transação do daily (+ conquista halloween 2026, 1x por pessoa)
-
-sai (loja, direto, sem sorteio):
-- 20 = 1 ametista · 30 = 50 diamantes · 300 = bruxinho · 666 = demônio
+se sobrar demais, subir preço do roll/caixarara.
 
 ## xp
 
@@ -54,7 +44,7 @@ streak +5/dia (teto 50). nível N pede N*100 xp.
 
 - giro normal: pesos somam 100 (roxo 0.1, o mais raro)
 - rara: sem comum (roxo 1%, demônio 1%)
-- exclusivos fora do giro (peso 0): bruxinho e demônio (doces ou rara)
+- exclusivos fora do giro (peso 0): bruxinho e demônio (só na rara)
 
 ## regras
 

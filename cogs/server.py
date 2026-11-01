@@ -126,7 +126,6 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     xp, nivel = snap["xp"], snap["nivel"]
     dima, amet, aura = snap["dima"], snap["amet"], snap["aura"]
     colecao = snap["colecao"]
-    doces = snap["doces"]
     ultimo_daily = snap["daily"]
     feitas = snap["feitas"]
     sdias = snap["streak"]
@@ -149,7 +148,7 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
     )
     embed.add_field(
         name="💎 economia",
-        value=f"{visual.DIAMANTE} {dima} · {visual.AMETHYST} {amet} · 🍬 {doces}"
+        value=f"{visual.DIAMANTE} {dima} · {visual.AMETHYST} {amet}"
         + (f" · aura {aura}" if aura else "")
         + f"\ndaily: {daily}"
         + (f"\n⚡ {linha_buff}" if linha_buff else ""),
@@ -177,7 +176,6 @@ async def _montar_perfil(membro: discord.Member) -> tuple[discord.Embed, discord
                 xp_prox,
                 dima,
                 amet,
-                doces,
                 sdias,
                 len(feitas),
                 len(colecao),

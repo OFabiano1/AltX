@@ -5,22 +5,12 @@ import pytest
 
 
 def test_daily_1x_por_dia(banco):
-    ok, dima, amet, doces = banco.tentar_daily(1, 100, 2, "2099-01-01")
-    assert ok and (dima, amet, doces) == (100, 2, 0)
-    ok, _, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-01")
+    ok, dima, amet = banco.tentar_daily(1, 100, 2, "2099-01-01")
+    assert ok and (dima, amet) == (100, 2)
+    ok, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-01")
     assert not ok
-    ok, _, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-02")
+    ok, _, _ = banco.tentar_daily(1, 100, 2, "2099-01-02")
     assert ok
-
-
-def test_daily_doces_vao_juntas(banco):
-    banco.ganhar_doces(1, 10)
-    ok, dima, amet, doces = banco.tentar_daily(1, 100, 2, "2099-01-01", 20)
-    assert ok and (dima, amet, doces) == (100, 2, 30)
-    # resgate negado: nada muda — nem doces.
-    ok, dima2, amet2, doces2 = banco.tentar_daily(1, 100, 2, "2099-01-01", 20)
-    assert not ok and (dima2, amet2, doces2) == (100, 2, 30)
-    assert banco.buscar_doces(1) == 30
 
 
 def test_conquista_uma_vez(banco):
@@ -29,72 +19,6 @@ def test_conquista_uma_vez(banco):
     assert banco.dar_conquista(2, "halloween2026", "31/10/2026") is True
     assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
     assert banco.conquistas_de(3) == []
-
-
-def test_daily_concede_conquista_na_transacao(banco):
-    """pacote e conquista caem juntos: se um passou, os dois passaram."""
-    ok, dima, amet, doces = banco.tentar_daily(
-        1, 100, 2, "2099-01-01", 20, "halloween2026", "31/10/2026"
-    )
-    assert ok and (dima, amet, doces) == (100, 2, 20)
-    assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
-    # resgate sem conquista passada: banco limpo pro usuario 2.
-    banco.tentar_daily(2, 100, 2, "2099-01-01")
-    assert banco.conquistas_de(2) == []
-    # resgate negado (mesmo dia): conquista nao fica guardada meio-termo.
-    banco.tentar_daily(3, 100, 2, "2099-01-01")
-    banco.tentar_daily(3, 100, 2, "2099-01-01", 20, "halloween2026", "31/10/2026")
-    assert banco.conquistas_de(3) == []
-
-
-def test_daily_pacote_1x_por_pessoa(banco, monkeypatch):
-    """segundo daily (após virar o dia utc) paga o pacote de novo? nunca."""
-    import asyncio
-    from datetime import datetime as _dt, timezone
-
-    from cogs import economia as eco
-
-    # 09h de 31/10 em br: primeiro resgate, pacote completo.
-    class Relogio1:
-        @staticmethod
-        def now(tz=None):
-            return _dt(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
-
-    monkeypatch.setattr(eco, "datetime", Relogio1)
-    cog = eco.Economia(None)
-    ok, dima, amet, doces, pacote = asyncio.run(cog._daily(1))
-    assert ok and (dima, amet, doces, pacote) == (150, 3, 20, True)
-    assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
-
-    # 22h de 31/10 em br = 01h utc de 01/11: daily novo, mas sem pacote.
-    class Relogio2:
-        @staticmethod
-        def now(tz=None):
-            return _dt(2026, 11, 1, 1, 0, tzinfo=timezone.utc)
-
-    monkeypatch.setattr(eco, "datetime", Relogio2)
-    ok, dima, amet, doces, pacote = asyncio.run(cog._daily(1))
-    assert ok and (dima, amet, doces, pacote) == (250, 5, 20, False)
-    assert banco.conquistas_de(1) == [("halloween2026", "31/10/2026")]
-
-
-def test_bonus_halloween_so_no_dia():
-    from datetime import datetime, timezone
-
-    from cogs.economia import bonus_hoje
-
-    # 09h de 31/10 em br.
-    a = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
-    assert bonus_hoje(a) == (50, 1, 20)
-    # 22h de 31/10 em br = 01h utc de 01/11: ainda vale.
-    b = datetime(2026, 11, 1, 1, 0, tzinfo=timezone.utc)
-    assert bonus_hoje(b) == (50, 1, 20)
-    # 00h de 01/11 em br = 03h utc: acabou.
-    c = datetime(2026, 11, 1, 3, 0, tzinfo=timezone.utc)
-    assert bonus_hoje(c) == (0, 0, 0)
-    # 21h de 30/10 em br (utc 31T00:00): ainda não.
-    d = datetime(2026, 10, 31, 0, 0, tzinfo=timezone.utc)
-    assert bonus_hoje(d) == (0, 0, 0)
 
 
 def test_transferir(banco):
@@ -113,14 +37,6 @@ def test_saldo_nunca_negativo(banco):
     assert banco.adicionar_diamantes(1, 50) == 50
     assert banco.adicionar_diamantes(1, -999) == 0
     assert banco.adicionar_ametista(1, -1) == 0
-
-
-def test_gastar_doces(banco):
-    banco.ganhar_doces(1, 50)
-    assert banco.gastar_doces(1, 30) == (True, 20)
-    assert banco.gastar_doces(1, 30) == (False, 20)
-    assert banco.gastar_doces(1, 20) == (True, 0)
-    assert banco.gastar_doces(1, 0)[0] is False
 
 
 def test_buffs(banco):

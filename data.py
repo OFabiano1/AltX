@@ -138,11 +138,6 @@ CREATE TABLE IF NOT EXISTS contadores (
     PRIMARY KEY (user_id, dia, chave)
 );
 
-CREATE TABLE IF NOT EXISTS doces (
-    user_id INTEGER PRIMARY KEY,
-    doces   INTEGER NOT NULL DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS conquistas (
     user_id      INTEGER NOT NULL,
     conquista_id TEXT NOT NULL,
@@ -400,20 +395,10 @@ def transferir_diamantes(origem: int, destino: int, qtd: int) -> tuple[bool, int
         return True, s_origem - qtd, s_dest + qtd
 
 
-def tentar_daily(
-    user_id: int,
-    dima: int,
-    amet: int,
-    hoje: str,
-    doces: int = 0,
-    conquista_id: str = "",
-    quando: str = "",
-) -> tuple[bool, int, int, int]:
-    """tenta resgatar o daily. Retorna (ok, diamantes, ametista, doces).
+def tentar_daily(user_id: int, dima: int, amet: int, hoje: str) -> tuple[bool, int, int]:
+    """tenta resgatar o daily. Retorna (ok, diamantes, ametista).
 
-    `hoje` é YYYY-MM-DD em UTC. Se last_daily == hoje, nega e nada muda.
-    Os doces caem na mesma transação das moedas — o daily fica inteiro ou null.
-    `conquista_id` (opcional) é concedido nessa mesma transação, junto do resto.
+    `hoje` é YYYY-MM-DD em UTC. Se last_daily == hoje, nega.
     """
     with _lock, _conectar() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -421,12 +406,8 @@ def tentar_daily(
             "SELECT diamantes, ametista, last_daily FROM economia WHERE user_id = ?",
             (user_id,),
         ).fetchone()
-        d_row = conn.execute(
-            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        doces_atual = d_row["doces"] if d_row else 0
         if row and row["last_daily"] == hoje:
-            return False, row["diamantes"], row["ametista"], doces_atual
+            return False, row["diamantes"], row["ametista"]
         d_total = (row["diamantes"] if row else 0) + dima
         a_total = (row["ametista"] if row else 0) + amet
         conn.execute(
@@ -436,21 +417,7 @@ def tentar_daily(
             "last_daily = excluded.last_daily",
             (user_id, d_total, a_total, hoje),
         )
-        doces_total = doces_atual
-        if doces > 0:
-            doces_total += doces
-            conn.execute(
-                "INSERT INTO doces (user_id, doces) VALUES (?, ?) "
-                "ON CONFLICT(user_id) DO UPDATE SET doces = excluded.doces",
-                (user_id, doces_total),
-            )
-        if conquista_id:
-            conn.execute(
-                "INSERT OR IGNORE INTO conquistas (user_id, conquista_id, quando) "
-                "VALUES (?, ?, ?)",
-                (user_id, conquista_id, quando),
-            )
-        return True, d_total, a_total, doces_total
+        return True, d_total, a_total
 
 
 def top_diamantes(limite: int = 10) -> list[tuple[int, int]]:
@@ -855,63 +822,6 @@ def listar_destinos() -> list[tuple[str, int]]:
     return [(r["repo"], r["channel_id"]) for r in rows]
 
 
-# ─── doces de halloween ───
-def buscar_doces(user_id: int) -> int:
-    """total de doces do usuario."""
-    with _conectar() as conn:
-        row = conn.execute(
-            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
-        ).fetchone()
-    return row["doces"] if row else 0
-
-
-def ganhar_doces(user_id: int, qtd: int) -> int:
-    """soma doces. retorna o total."""
-    with _lock, _conectar() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "INSERT INTO doces (user_id, doces) VALUES (?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET doces = doces + ?",
-            (user_id, qtd, qtd),
-        )
-        row = conn.execute(
-            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        return row["doces"]
-
-
-def gastar_doces(user_id: int, qtd: int) -> tuple[bool, int]:
-    """gasta doces se tiver saldo. retorna (ok, total_atual)."""
-    if qtd <= 0:
-        return False, buscar_doces(user_id)
-    with _lock, _conectar() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
-            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        total = row["doces"] if row else 0
-        if total < qtd:
-            return False, total
-        total -= qtd
-        conn.execute(
-            "INSERT INTO doces (user_id, doces) VALUES (?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET doces = ?",
-            (user_id, total, total),
-        )
-        return True, total
-
-
-def top_doces(limite: int = 5) -> list[tuple[int, int]]:
-    """top N por doces. retorna [(user_id, doces)]."""
-    with _conectar() as conn:
-        rows = conn.execute(
-            "SELECT user_id, doces FROM doces "
-            "WHERE doces > 0 ORDER BY doces DESC LIMIT ?",
-            (limite,),
-        ).fetchall()
-    return [(r["user_id"], r["doces"]) for r in rows]
-
-
 # ─── conquistas ───
 def dar_conquista(user_id: int, conquista_id: str, quando: str = "") -> bool:
     """marca a conquista. True se desbloqueou agora (primeira vez)."""
@@ -1195,7 +1105,7 @@ def snapshot(user_id: int, hoje: str) -> dict:
     """tudo que o >player precisa, numa leitura so.
 
     retorna {xp, nivel, dima, amet, aura, colecao, apostas, vitorias,
-    doces, daily, feitas, streak, ptp, steam}. colecao: [(axolotl_id, qtd)].
+    daily, feitas, streak, ptp, steam}. colecao: [(axolotl_id, qtd)].
     """
     with _conectar() as conn:
         r = conn.execute(
@@ -1225,11 +1135,6 @@ def snapshot(user_id: int, hoje: str) -> dict:
             "SELECT apostas, vitorias FROM bet_stats WHERE user_id = ?", (user_id,)
         ).fetchone()
         apostas, vitorias = (r["apostas"], r["vitorias"]) if r else (0, 0)
-
-        r = conn.execute(
-            "SELECT doces FROM doces WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        doces = r["doces"] if r else 0
 
         feitas = [
             x["quest_id"]
@@ -1289,7 +1194,6 @@ def snapshot(user_id: int, hoje: str) -> dict:
         "colecao": colecao,
         "apostas": apostas,
         "vitorias": vitorias,
-        "doces": doces,
         "daily": daily,
         "feitas": feitas,
         "streak": streak,

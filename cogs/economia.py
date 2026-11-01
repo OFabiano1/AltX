@@ -1,7 +1,7 @@
 import asyncio
 import os
 import random
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -9,28 +9,10 @@ from discord.ext import commands
 
 import visual
 import data
-from cogs.halloween import linha_conquista
 
 # ─── ganhos ───
 DAILY_DIAMANTES = 100
 DAILY_AMETISTA = 2
-
-# ─── halloween 2026: bônus do dia 31, 1x no >daily ───
-# Janela UTC-3 (mesmo fuso do countdown da cog halloween):
-# vale das 00:00 de 31/10 br até 23:59 de 31/10 br.
-DIA_HALLOWEEN = date(2026, 10, 31)
-FUSO_BR = timezone(timedelta(hours=-3))
-BONUS_HALLOWEEN_DIMA = 50
-BONUS_HALLOWEEN_AMET = 1
-BONUS_HALLOWEEN_DOCES = 20
-QUANDO_HALLOWEEN = "31/10/2026"
-
-
-def bonus_hoje(agora: datetime) -> tuple[int, int, int]:
-    """(dima_extra, amet_extra, doces) se hoje é 31/10/2026 em br, senão (0, 0, 0)."""
-    if agora.astimezone(FUSO_BR).date() == DIA_HALLOWEEN:
-        return BONUS_HALLOWEEN_DIMA, BONUS_HALLOWEEN_AMET, BONUS_HALLOWEEN_DOCES
-    return 0, 0, 0
 
 MSG_COOLDOWN = 60  # segundos
 MSG_DIMA_MIN = 2
@@ -56,8 +38,7 @@ AURAS = {
 
 # ─── axolotls colecionáveis (gacha, peso soma 100) ───
 # bruxinho e demonio tem peso 0: nunca saem no giro, so
-# comprando com doces ou na caixa rara. peso 0 no
-# random.choices nunca e sorteado.
+# na caixa rara. peso 0 no random.choices nunca e sorteado.
 AXOLOTLS = {
     "bebe":      {"nome": "bebê axolotl",       "rar": "comum",    "peso": 25},
     "rosa":      {"nome": "axolotl rosa",       "rar": "comum",    "peso": 16},
@@ -81,14 +62,6 @@ AXOLOTLS = {
 
 # ids antigos renomeados: quem ja tem no banco continua vendo o nome certo.
 ALIAS_AXOLOTL = {"glitch": "bugado"}
-
-# ─── loja de doces (id -> nome, preço em doces, descrição) ───
-DOCES_LOJA = {
-    "ametista1": {"nome": "1 ametista",       "preco": 20,  "desc": "doces derretidos viram ametista"},
-    "dima50":    {"nome": "50 diamantes",     "preco": 30,  "desc": "pescados no fundo do lago"},
-    "bruxinho":  {"nome": "axolotl bruxinho", "preco": 300, "desc": "exclusivo de halloween, lendário"},
-    "demonio":   {"nome": "axolotl demônio",  "preco": 666, "desc": "o preço do lago, lendário"},
-}
 
 # ─── caixas (loot box: 3 axolotls por abertura) ───
 CAIXA_CUSTO = 150       # diamantes pela caixa comum
@@ -122,11 +95,6 @@ COR_RAR = {
 # opções de aura pros slash (nome bonito -> id).
 _ESCOLHAS_AURA = [
     app_commands.Choice(name=info["nome"], value=aid) for aid, info in AURAS.items()
-]
-
-# tudo que o /buy vende: auras + itens de doces.
-_ESCOLHAS_BUY = _ESCOLHAS_AURA + [
-    app_commands.Choice(name=info["nome"], value=iid) for iid, info in DOCES_LOJA.items()
 ]
 
 
@@ -286,7 +254,6 @@ class CaixaView(discord.ui.View):
 # emoji de cada secao da loja.
 LOJA_EMOJIS = {
     "Auras": "✨",
-    "Doces": "🍬",
     "Caixas": "🎁",
 }
 
@@ -324,21 +291,16 @@ def _embed_loja_secao(titulo: str, descricao: str, saldo: str, rodape: str) -> d
 
 
 def _secoes_loja(
-    dima: int, amet: int, aura: str | None, minhas: set, doces: int, barra: str
+    dima: int, amet: int, aura: str | None, minhas: set, barra: str
 ) -> list[tuple[str, discord.Embed]]:
-    """3 secoes prontas: [(titulo, embed)]. `barra` e `>` ou `/` pros exemplos."""
-    saldo = f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST} • **{doces}** 🍬"
+    """2 secoes prontas: [(titulo, embed)]. `barra` e `>` ou `/` pros exemplos."""
+    saldo = f"**{dima}** {visual.DIAMANTE} • **{amet}** {visual.AMETHYST}"
     linhas_auras = []
     for aid, info in AURAS.items():
         dono = "(sua)" if aid in minhas else ""
         equip = " (equipada)" if aura == aid else ""
         linhas_auras.append(
             f"`{aid}` — **{info['nome']}** — **{info['preco']}** {visual.AMETHYST} {dono}{equip}\n└ {info['desc']}"
-        )
-    linhas_doces = []
-    for iid, info in DOCES_LOJA.items():
-        linhas_doces.append(
-            f"`{iid}` — **{info['nome']}** — **{info['preco']}** 🍬\n└ {info['desc']}"
         )
     texto_caixas = (
         f"`{barra}roll` — **{ROLL_CUSTO}** {visual.AMETHYST} por giro. sorteia 1 axolotl.\n\n"
@@ -354,15 +316,6 @@ def _secoes_loja(
                 "poder passivo pro teu perfil.\n\n" + "\n\n".join(linhas_auras),
                 saldo,
                 f"{barra}buy <id> compra aura • {barra}equipar <id>",
-            ),
-        ),
-        (
-            "Doces",
-            _embed_loja_secao(
-                "Doces",
-                "troca os doces do halloween.\n\n" + "\n\n".join(linhas_doces),
-                saldo,
-                f"{barra}buy <id> troca com doces",
             ),
         ),
         (
@@ -461,82 +414,42 @@ class Economia(commands.Cog, name="Economia"):
         """veja seus diamantes, ametista, aura e coleção."""
         membro = membro or ctx.author
         # leituras independentes, roda junto.
-        (dima, amet, aura), colecao, buffs, conquistas = await asyncio.gather(
+        (dima, amet, aura), colecao, buffs = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, membro.id),
             asyncio.to_thread(data.buscar_colecao, membro.id),
             asyncio.to_thread(data.buffs_ativos, membro.id),
-            asyncio.to_thread(data.conquistas_de, membro.id),
         )
         total = sum(q for _, q in colecao)
-        embed = _embed_saldo(membro, dima, amet, aura, total, buffs)
-        linhas_conq = linha_conquista(conquistas)
-        if linhas_conq:
-            embed.add_field(name="🏅 conquistas", value="\n".join(linhas_conq), inline=False)
-        await ctx.send(embed=embed)
+        await ctx.send(embed=_embed_saldo(membro, dima, amet, aura, total, buffs))
 
     @app_commands.command(name="saldo", description="veja seus diamantes, ametista, aura e coleção.")
     async def saldo_slash(self, interaction: discord.Interaction):
         # leituras independentes, roda junto.
-        (dima, amet, aura), colecao, buffs, conquistas = await asyncio.gather(
+        (dima, amet, aura), colecao, buffs = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, interaction.user.id),
             asyncio.to_thread(data.buscar_colecao, interaction.user.id),
             asyncio.to_thread(data.buffs_ativos, interaction.user.id),
-            asyncio.to_thread(data.conquistas_de, interaction.user.id),
         )
         total = sum(q for _, q in colecao)
         membro = interaction.user
-        embed = _embed_saldo(membro, dima, amet, aura, total, buffs)
-        linhas_conq = linha_conquista(conquistas)
-        if linhas_conq:
-            embed.add_field(name="🏅 conquistas", value="\n".join(linhas_conq), inline=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(
+            embed=_embed_saldo(membro, dima, amet, aura, total, buffs)
+        )
 
     # ─── >daily / /daily ───
-    async def _daily(self, user_id: int) -> tuple[bool, int, int, int, bool]:
-        """resgata o daily. retorna (ok, dima_total, amet_total, doces_total, pacote).
-
-        `pacote` = bônus de halloween concedido agora. vale 1x por pessoa:
-        quem já tem a conquista halloween2026 recebe o daily normal.
-        """
-        agora = datetime.now(timezone.utc)
-        hoje = agora.strftime("%Y-%m-%d")
-        extra_dima, extra_amet, extra_doces = bonus_hoje(agora)
-        if extra_doces and any(
-            cid == "halloween2026"
-            for cid, _ in await asyncio.to_thread(data.conquistas_de, user_id)
-        ):
-            # o pacote é 1x por pessoa: o br 31/10 atravessa dois dias utc,
-            # e sem esse gate o daily das 21h pagaria tudo de novo.
-            extra_dima = extra_amet = extra_doces = 0
-        pacote = extra_doces != 0
-        ok, dima, amet, doces = await asyncio.to_thread(
-            data.tentar_daily,
-            user_id,
-            DAILY_DIAMANTES + extra_dima,
-            DAILY_AMETISTA + extra_amet,
-            hoje,
-            extra_doces,
-            "halloween2026" if pacote else "",
-            QUANDO_HALLOWEEN if pacote else "",
+    async def _daily(self, user_id: int) -> tuple[bool, int, int]:
+        hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return await asyncio.to_thread(
+            data.tentar_daily, user_id, DAILY_DIAMANTES, DAILY_AMETISTA, hoje
         )
-        return ok, dima, amet, doces, pacote
 
     @commands.command(name="daily")
     async def daily(self, ctx: commands.Context):
         """resgate diário: diamantes + ametista. 1x por dia."""
-        ok, dima, amet, doces, pacote = await self._daily(ctx.author.id)
+        ok, dima, amet = await self._daily(ctx.author.id)
         if not ok:
             await ctx.send(
                 f"{visual.AXOLOTL} {ctx.author.mention} você já resgatou hoje! volta amanhã."
-            )
-            return
-        if pacote:
-            await ctx.send(
-                f"🎃 {visual.AXOLOTL} {ctx.author.mention} resgatou "
-                f"**{DAILY_DIAMANTES + BONUS_HALLOWEEN_DIMA}** {visual.DIAMANTE} + "
-                f"**{DAILY_AMETISTA + BONUS_HALLOWEEN_AMET}** {visual.AMETHYST} + "
-                f"**{BONUS_HALLOWEEN_DOCES}** 🍬 bônus de halloween! "
-                "🏅 conquista **Halloween 2026** desbloqueada!"
             )
             return
         await ctx.send(
@@ -546,20 +459,11 @@ class Economia(commands.Cog, name="Economia"):
 
     @app_commands.command(name="daily", description="resgate diário: diamantes + ametista.")
     async def daily_slash(self, interaction: discord.Interaction):
-        ok, _, _, _, pacote = await self._daily(interaction.user.id)
+        ok, _, _ = await self._daily(interaction.user.id)
         if not ok:
             await interaction.response.send_message(
                 f"{visual.AXOLOTL} você já resgatou hoje! volta amanhã.",
                 ephemeral=True,
-            )
-            return
-        if pacote:
-            await interaction.response.send_message(
-                f"🎃 {visual.AXOLOTL} resgatado: "
-                f"**{DAILY_DIAMANTES + BONUS_HALLOWEEN_DIMA}** {visual.DIAMANTE} + "
-                f"**{DAILY_AMETISTA + BONUS_HALLOWEEN_AMET}** {visual.AMETHYST} + "
-                f"**{BONUS_HALLOWEEN_DOCES}** 🍬 bônus de halloween! "
-                "🏅 conquista **Halloween 2026** desbloqueada!"
             )
             return
         await interaction.response.send_message(
@@ -639,34 +543,29 @@ class Economia(commands.Cog, name="Economia"):
     # ─── >loja ───
     @commands.command(name="loja")
     async def loja(self, ctx: commands.Context):
-        """loja do lago por categoria: auras, doces e caixas."""
+        """loja do lago por categoria: auras e caixas."""
         # leituras independentes, roda junto.
-        (dima, amet, aura), minhas, doces = await asyncio.gather(
+        (dima, amet, aura), minhas = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, ctx.author.id),
             asyncio.to_thread(data.auras_usuario, ctx.author.id),
-            asyncio.to_thread(data.buscar_doces, ctx.author.id),
         )
-        secoes = _secoes_loja(dima, amet, aura, set(minhas), doces, ">")
+        secoes = _secoes_loja(dima, amet, aura, set(minhas), ">")
         await ctx.send(embed=_embed_loja_capa(), view=LojaView(secoes))
 
     # ─── >buy ───
     @commands.command(name="buy")
     async def buy(self, ctx: commands.Context, item_id: str = None):
-        """compra aura com ametista ou item com doces. ex: `>buy brisa`, `>buy dima50`."""
+        """compra uma aura com ametista. ex: `>buy brisa`."""
         if item_id is None:
             await ctx.send(f"{visual.AXOLOTL} uso: `>buy <id>` — veja os ids com `>loja`.")
             return
-        item_id = item_id.lower()
-        if item_id in DOCES_LOJA:
-            await self._buy_doces(ctx, item_id)
-            return
-        if item_id not in AURAS:
+        aura_id = item_id.lower()
+        if aura_id not in AURAS:
             await ctx.send(
-                f"{visual.AXOLOTL} item inválido! veja com `>loja`. opções: "
-                + ", ".join(f"`{k}`" for k in list(AURAS) + list(DOCES_LOJA))
+                f"{visual.AXOLOTL} aura inválida! veja com `>loja`. opções: "
+                + ", ".join(f"`{k}`" for k in AURAS)
             )
             return
-        aura_id = item_id
         if await asyncio.to_thread(data.tem_aura, ctx.author.id, aura_id):
             await ctx.send(f"{visual.AXOLOTL} você já tem essa aura! use `>equipar {aura_id}`.")
             return
@@ -684,30 +583,6 @@ class Economia(commands.Cog, name="Economia"):
         await ctx.send(
             f"{visual.AXOLOTL} {ctx.author.mention} comprou e equipou **{AURAS[aura_id]['nome']}**!"
         )
-
-    async def _trocar_doces(self, user_id: int, item_id: str) -> str:
-        """troca doces pelo item. devolve a msg pronta. vale pro `>` e pro `/`."""
-        info = DOCES_LOJA[item_id]
-        ok, _ = await asyncio.to_thread(data.gastar_doces, user_id, info["preco"])
-        if not ok:
-            return f"🍬 faltam doces pra **{info['nome']}**! custa **{info['preco']}** 🍬."
-        if item_id == "ametista1":
-            await asyncio.to_thread(data.adicionar_ametista, user_id, 1)
-            return f"🍬 trocou **{info['preco']}** doces por **1** {visual.AMETHYST}!"
-        if item_id == "dima50":
-            await asyncio.to_thread(data.adicionar_diamantes, user_id, 50)
-            return f"🍬 trocou **{info['preco']}** doces por **50** {visual.DIAMANTE}!"
-        qtd = await asyncio.to_thread(data.adicionar_axolotl, user_id, item_id)
-        axo = AXOLOTLS[item_id]
-        return (
-            f"🍬 trocou **{info['preco']}** doces por **{axo['nome']}** ({axo['rar']})! "
-            f"você tem **{qtd}x** esse."
-        )
-
-    async def _buy_doces(self, ctx: commands.Context, item_id: str):
-        """atalho do prefixo pra troca com doces."""
-        msg = await self._trocar_doces(ctx.author.id, item_id)
-        await ctx.send(f"{visual.AXOLOTL} {ctx.author.mention} {msg}")
 
     # ─── >equipar / >auras ───
     @commands.command(name="equipar", aliases=["aura"])
@@ -1020,32 +895,27 @@ class Economia(commands.Cog, name="Economia"):
             )
 
     # ─── /loja ───
-    @app_commands.command(name="loja", description="loja do lago por categoria: auras, doces e caixas.")
+    @app_commands.command(name="loja", description="loja do lago por categoria: auras e caixas.")
     async def loja_slash(self, interaction: discord.Interaction):
         """versão slash do >loja."""
         user_id = interaction.user.id
         # leituras independentes, roda junto.
-        (dima, amet, aura), minhas, doces = await asyncio.gather(
+        (dima, amet, aura), minhas = await asyncio.gather(
             asyncio.to_thread(data.buscar_saldo, user_id),
             asyncio.to_thread(data.auras_usuario, user_id),
-            asyncio.to_thread(data.buscar_doces, user_id),
         )
-        secoes = _secoes_loja(dima, amet, aura, set(minhas), doces, "/")
+        secoes = _secoes_loja(dima, amet, aura, set(minhas), "/")
         await interaction.response.send_message(
             embed=_embed_loja_capa(), view=LojaView(secoes), ephemeral=True
         )
 
     # ─── /buy ───
-    @app_commands.command(name="buy", description="compra aura com ametista ou item com doces.")
-    @app_commands.describe(aura_id="o que comprar")
-    @app_commands.choices(aura_id=_ESCOLHAS_BUY)
+    @app_commands.command(name="buy", description="compra uma aura com ametista.")
+    @app_commands.describe(aura_id="qual aura comprar")
+    @app_commands.choices(aura_id=_ESCOLHAS_AURA)
     async def buy_slash(self, interaction: discord.Interaction, aura_id: str):
         """versão slash do >buy."""
         user_id = interaction.user.id
-        if aura_id in DOCES_LOJA:
-            msg = await self._trocar_doces(user_id, aura_id)
-            await interaction.response.send_message(f"{visual.AXOLOTL} {msg}")
-            return
         if await asyncio.to_thread(data.tem_aura, user_id, aura_id):
             await interaction.response.send_message(
                 f"{visual.AXOLOTL} você já tem essa aura! equipe com `/equipar`.",
@@ -1243,7 +1113,7 @@ def _resumo_reset(snap: dict) -> str:
     return (
         f"nivel **{snap['nivel']}** · `{snap['xp']}` xp · "
         f"{visual.DIAMANTE} **{snap['dima']}** · {visual.AMETHYST} **{snap['amet']}** · "
-        f"🍬 **{snap['doces']}** · streak **{snap['streak']}** · "
+        f"streak **{snap['streak']}** · "
         f"colecao **{len(snap['colecao'])}** · apostas **{snap['apostas']}**"
     )
 
@@ -1258,7 +1128,7 @@ async def _texto_reset(dono_id: int, alvo_id: int) -> tuple[str, ResetView | Non
     snap = await asyncio.to_thread(data.snapshot, alvo_id, hoje)
     vazio = (
         snap["xp"] == 0 and snap["nivel"] == 1 and snap["dima"] == 0
-        and snap["amet"] == 0 and snap["doces"] == 0 and not snap["colecao"]
+        and snap["amet"] == 0 and not snap["colecao"]
         and snap["apostas"] == 0 and snap["streak"] == 0 and not snap["feitas"]
         and snap["steam"] is None and not snap["buffs"]
     )
@@ -1266,7 +1136,7 @@ async def _texto_reset(dono_id: int, alvo_id: int) -> tuple[str, ResetView | Non
         return f"{visual.AXOLOTL} <@{alvo_id}> ja ta zerado, nada pra resetar.", None
     return (
         f"🧨 resetar <@{alvo_id}>?\n{_resumo_reset(snap)}\n"
-        "apaga xp, grana, colecao, doces, bet, streak, buffs, mines e vinculo deadlock. sem volta!",
+        "apaga xp, grana, colecao, bet, streak, buffs, mines e vinculo deadlock. sem volta!",
         ResetView(dono_id, alvo_id),
     )
 

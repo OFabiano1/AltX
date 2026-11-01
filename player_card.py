@@ -28,7 +28,6 @@ VIOLETA = (143, 0, 255)
 VIOLETA_CLARO = (186, 108, 255)
 CIANO = (34, 211, 238)
 ROXO = (192, 132, 252)
-LARANJA = (251, 146, 60)
 
 LARGURA = 1000
 MARGEM = 40
@@ -58,17 +57,6 @@ def _coracao(desenho: ImageDraw.ImageDraw, x: int, y: int, r: int, cor: tuple) -
     desenho.polygon([(x - r, y), (x + r, y), (x, y + r)], fill=cor)
 
 
-def _doce(desenho: ImageDraw.ImageDraw, x: int, y: int, r: int, cor: tuple) -> None:
-    """doces: bala laranja (bola + pontas)."""
-    desenho.polygon(
-        [(x - r + 2, y - 5), (x - r - 9, y - 11), (x - r - 9, y + 11)], fill=cor
-    )
-    desenho.polygon(
-        [(x + r - 2, y - 5), (x + r + 9, y - 11), (x + r + 9, y + 11)], fill=cor
-    )
-    desenho.ellipse([x - r, y - r, x + r, y + r], fill=cor)
-
-
 def render_player(
     nivel: int,
     pos: int | None,
@@ -76,7 +64,6 @@ def render_player(
     xp_prox: int,
     dima: int,
     amet: int,
-    doces: int,
     streak: int,
     feitas_hoje: int,
     especies: int,
@@ -133,7 +120,6 @@ def render_player(
         for desenha, cor, valor in (
             (_losango, CIANO, dima),
             (_coracao, ROXO, amet),
-            (_doce, LARANJA, doces),
         ):
             desenha(desenho, x + 14, y + 16, 14, cor)
             x += 36

@@ -8,7 +8,6 @@ def test_reset_limpa_tudo(banco):
     banco.ganhar_xp(uid, 500)
     banco.adicionar_diamantes(uid, 1000)
     banco.adicionar_ametista(uid, 50)
-    banco.ganhar_doces(uid, 99)
     banco.adicionar_axolotl(uid, "roxo")
     banco.dar_aura(uid, "brisa")
     banco.registrar_ptp(uid, "vitoria")
@@ -27,7 +26,6 @@ def test_reset_limpa_tudo(banco):
 
     assert banco.buscar_xp(uid) == (0, 1)
     assert banco.buscar_saldo(uid) == (0, 0, None)
-    assert banco.buscar_doces(uid) == 0
     assert banco.buscar_colecao(uid) == []
     assert banco.auras_usuario(uid) == []
     assert banco.buscar_ptp(uid) == (0, 0, 0)

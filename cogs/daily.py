@@ -21,7 +21,7 @@ log = logging.getLogger("alt.daily")
 TERMO_URL = (os.getenv("TERMO_URL") or "https://term.ooo/").strip()
 DIGEST_CHANNEL_ID = data.env_int("DIGEST_CHANNEL_ID", 1310398751575113758)
 
-# utc-3 fixo, mesmo do halloween.
+# utc-3 fixo.
 TZ = datetime.timezone(datetime.timedelta(hours=-3))
 MEIA_NOITE = datetime.time(hour=0, minute=0, tzinfo=TZ)
 APAGA_HORA = datetime.time(hour=23, minute=59, tzinfo=TZ)
