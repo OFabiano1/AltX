@@ -1,10 +1,10 @@
-# card do >player: renderiza png padrao sem nenhum parametro de halloween.
+# card do >player: renderiza o png padrao de moedas (dima + ametista).
 # roda com: pytest tests/test_player_card.py (na raiz do bot).
 
 from player_card import render_player
 
 
-def test_render_sem_doces():
+def test_render_player_padrao():
     png = render_player(
         nivel=2,
         pos=None,
