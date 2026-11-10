@@ -18,7 +18,7 @@ load_dotenv()
 # ─── versao ───
 
 # sobe a cada entrega, igual o commit (`3.0.x - o que mudou`).
-VERSAO = "3.0.1"
+VERSAO = "3.0.2"
 
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
@@ -120,9 +120,23 @@ async def on_ready():
     log.info("%s online — %s", bot.user, visual.FOOTER)
 
 
+# quase todo comando le ctx.guild: na dm do bot quebrava com AttributeError.
+LIVRES_NA_DM = {"ajuda", "ping", "axolotl"}
+
+
+@bot.check
+async def so_no_servidor(ctx: commands.Context) -> bool:
+    if ctx.guild is None and ctx.command and ctx.command.name not in LIVRES_NA_DM:
+        raise commands.NoPrivateMessage()
+    return True
+
+
 @bot.event
 async def on_command_error(ctx: commands.Context, erro: commands.CommandError):
     if isinstance(erro, commands.CommandNotFound):
+        return
+    if isinstance(erro, commands.NoPrivateMessage):
+        await ctx.send("isso só funciona lá no servidor da axolotl br!")
         return
     if isinstance(erro, commands.CommandOnCooldown):
         await ctx.send(f"calma! tenta de novo em **{erro.retry_after:.0f}s**.")

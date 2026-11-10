@@ -17,14 +17,14 @@ import visual
 
 log = logging.getLogger("alt.server")
 
-# site da comunidade (fato do dono, mesmo do status).
-SITE_URL = "https://axolotlbr.xyz"
+# site da comunidade: o mesmo do AxolotlBR/src/data/site.ts.
+# (o dominio que tava aqui antes nem resolvia.)
+SITE_URL = "https://axolotl-br.shardweb.app"
 
 # projetos do ecossistema. ip do smp so entra aqui quando existir.
 PROJETOS = (
-    ("Axolotl SMP", "servidor de minecraft da comunidade — ip em breve"),
+    ("Axolotl SMP", "servidor de minecraft da comunidade — em construção, o ip sai aqui no discord"),
     ("ALT", "o bot do discord — `>ajuda` pra ver tudo"),
-    ("site", "axolotlbr.xyz"),
 )
 
 

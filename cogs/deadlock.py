@@ -37,10 +37,32 @@ def _embed_vinculo() -> discord.Embed:
             "pra usar esse comando vc precisa conectar sua conta da steam.\n\n"
             "é rápido: usa `>vincular` com seu id, link ou nome da steam\n"
             "ou aperta o botão aqui embaixo. leva menos de um minuto\n"
-            "e seu rank, stats e cargos passam a funcionar sozinhos."
+            "e seu rank, stats e diárias passam a funcionar sozinhos."
         ),
         color=visual.PRIMARY,
     )
+
+
+NAO_ACHEI_STEAM = "não achei esse perfil na steam. confere o id, link ou nome e tenta de novo."
+
+
+async def _vincular(discord_id: int, texto: str) -> str:
+    """resolve a steam, salva o vinculo e devolve a msg pro chat.
+
+    so a resolucao pode falhar com DeadlockAPIError. o perfil e enfeite:
+    se a steam cair depois de salvar, o vinculo vale e a msg sai sem nome.
+    """
+    account_id, _ = await asyncio.to_thread(deadlock_api.resolver_steam, texto)
+    await asyncio.to_thread(data.vincular_deadlock, discord_id, account_id)
+    try:
+        perfil = await asyncio.to_thread(deadlock_api.buscar_steam_profile, account_id)
+    except Exception:
+        perfil = {}
+    link = perfil.get("profileurl") or (
+        f"https://steamcommunity.com/profiles/{deadlock_api.account_para_steam64(account_id)}"
+    )
+    nome = perfil.get("personaname") or "conta"
+    return f"{visual.DEADLOCK} {nome} vinculado! {link}"
 
 
 class VincularModal(discord.ui.Modal, title="vincular deadlock"):
@@ -53,36 +75,24 @@ class VincularModal(discord.ui.Modal, title="vincular deadlock"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            texto = str(self.steam.value or "").strip()
-            if not texto:
-                await interaction.response.send_message(
-                    "me fala seu id, link ou nome da steam!", ephemeral=True
-                )
-                return
-            account_id, _ = await asyncio.to_thread(deadlock_api.resolver_steam, texto)
-            await asyncio.to_thread(
-                data.vincular_deadlock, interaction.user.id, account_id
-            )
-            perfil = await asyncio.to_thread(
-                deadlock_api.buscar_steam_profile, account_id
-            )
-            link = perfil.get("profileurl") or (
-                f"https://steamcommunity.com/profiles/{deadlock_api.account_para_steam64(account_id)}"
-            )
-            nome = perfil.get("personaname") or "conta"
+        texto = str(self.steam.value or "").strip()
+        if not texto:
             await interaction.response.send_message(
-                f"{visual.DEADLOCK} {nome} vinculado! {link}\n"
-                "agora é só usar `>stats` ou `/stats`.",
-                ephemeral=True,
+                "me fala seu id, link ou nome da steam!", ephemeral=True
+            )
+            return
+        # steam + api passam dos 3s do discord: confirma antes.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            msg = await _vincular(interaction.user.id, texto)
+            await interaction.followup.send(
+                f"{msg}\nagora é só usar `>stats` ou `/stats`.", ephemeral=True
             )
         except deadlock_api.DeadlockAPIError:
-            await interaction.response.send_message(
-                "não achei esse perfil na steam. confere o id, link ou nome e tenta de novo.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(NAO_ACHEI_STEAM, ephemeral=True)
         except Exception:
-            await interaction.response.send_message(
+            log.exception("deadlock: vincular pelo botao falhou")
+            await interaction.followup.send(
                 "deu ruim ao vincular, tenta de novo em uns segundos.", ephemeral=True
             )
 
@@ -367,40 +377,26 @@ class Deadlock(commands.Cog, name="Deadlock"):
             await ctx.send(embed=_embed_vinculo(), view=VincularView())
             return
         try:
-            account_id, _ = await asyncio.to_thread(deadlock_api.resolver_steam, texto)
+            async with ctx.typing():
+                msg = await _vincular(ctx.author.id, texto)
         except deadlock_api.DeadlockAPIError:
-            await ctx.send("não achei esse perfil na steam. confere e tenta de novo.")
+            await ctx.send(NAO_ACHEI_STEAM)
             return
-        await asyncio.to_thread(data.vincular_deadlock, ctx.author.id, account_id)
-        perfil = await asyncio.to_thread(deadlock_api.buscar_steam_profile, account_id)
-        link = perfil.get("profileurl") or (
-            f"https://steamcommunity.com/profiles/{deadlock_api.account_para_steam64(account_id)}"
-        )
-        nome = perfil.get("personaname") or "conta"
-        await ctx.send(f"{visual.DEADLOCK} {nome} vinculado! {link}")
+        await ctx.send(msg)
 
     # ─── /vincular ───
     @app_commands.command(name="vincular", description="vincula sua steam ao discord.")
     @app_commands.describe(steam="id, link ou nome da steam")
     async def vincular_slash(self, interaction: discord.Interaction, steam: str):
         """versão slash do >vincular."""
+        # steam + api passam dos 3s do discord: confirma antes.
+        await interaction.response.defer()
         try:
-            account_id, _ = await asyncio.to_thread(deadlock_api.resolver_steam, steam)
+            msg = await _vincular(interaction.user.id, steam.strip())
         except deadlock_api.DeadlockAPIError:
-            await interaction.response.send_message(
-                "não achei esse perfil na steam. confere e tenta de novo.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(NAO_ACHEI_STEAM, ephemeral=True)
             return
-        await asyncio.to_thread(data.vincular_deadlock, interaction.user.id, account_id)
-        perfil = await asyncio.to_thread(deadlock_api.buscar_steam_profile, account_id)
-        link = perfil.get("profileurl") or (
-            f"https://steamcommunity.com/profiles/{deadlock_api.account_para_steam64(account_id)}"
-        )
-        nome = perfil.get("personaname") or "conta"
-        await interaction.response.send_message(
-            f"{visual.DEADLOCK} {nome} vinculado! {link}"
-        )
+        await interaction.followup.send(msg)
 
     # ─── >desvincular ───
     @commands.command(name="desvincular")

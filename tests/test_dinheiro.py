@@ -194,6 +194,7 @@ class _InterFake:
         self.user = type("U", (), {"id": u})()
         self.response = _RespFake()
         self.follows = []
+        self.message = None
 
     async def edit_original_response(self, **kw):
         self.response.edits.append(kw)
@@ -217,12 +218,12 @@ def test_mines_duplo_clique(banco):
 
     async def t():
         banco.adicionar_diamantes(1, 1000)
-        await bet._comecar_mines(1, "dima", 100)
+        view = await bet._comecar_mines(1, "dima", 100)
         jogo = banco.buscar_mines(1)
         seguro = next(x for x in range(20) if x not in jogo["minas"])
         inters = [_InterFake(1) for _ in range(3)]
         await asyncio.wait_for(
-            asyncio.gather(*[bet._cavar(i, 1, seguro) for i in inters]),
+            asyncio.gather(*[bet._cavar(i, view, seguro) for i in inters]),
             timeout=20,
         )
         # 1 abriu + 2 tentaram sacar cedo: jogo segue vivo, sem deadlock
@@ -233,7 +234,7 @@ def test_mines_duplo_clique(banco):
         # abre +2 e saca: ai sim acaba
         segs = [x for x in range(20) if x not in jogo["minas"] and x != seguro][:2]
         for s in segs:
-            await bet._cavar(_InterFake(1), 1, s)
+            await bet._cavar(_InterFake(1), view, s)
         await bet._sacar_nucleo(1, _InterFake(1))
         assert banco.buscar_mines(1) is None
 
@@ -263,19 +264,63 @@ def test_mines_minimo_saque(banco):
 
     async def t():
         banco.adicionar_diamantes(1, 1000)
-        await bet._comecar_mines(1, "dima", 100)
+        view = await bet._comecar_mines(1, "dima", 100)
         jogo = banco.buscar_mines(1)
         assert len(jogo["minas"]) == 5  # 100 -> faixa 5
         seguro = next(x for x in range(20) if x not in jogo["minas"])
         i = _InterFake(1)
-        await bet._cavar(i, 1, seguro)
+        await bet._cavar(i, view, seguro)
         await bet._sacar_nucleo(1, i)
         assert banco.buscar_mines(1) is not None  # segue vivo
         assert any("3" in str(a) for a, _ in i.follows)
         segs = [x for x in range(20) if x not in jogo["minas"] and x != seguro][:2]
         for s in segs:
-            await bet._cavar(_InterFake(1), 1, s)
+            await bet._cavar(_InterFake(1), view, s)
         await bet._sacar_nucleo(1, i)
         assert banco.buscar_mines(1) is None  # com 3 sacou
+
+    asyncio.run(t())
+
+
+def test_mines_view_velha_nao_encerra_jogo(banco):
+    """cada clique troca a grade: o timeout da grade velha encerrava o jogo no meio."""
+    import asyncio
+
+    from cogs import bet
+
+    async def t():
+        banco.adicionar_diamantes(1, 1000)
+        primeira = await bet._comecar_mines(1, "dima", 100)
+        jogo = banco.buscar_mines(1)
+        seguro = next(x for x in range(20) if x not in jogo["minas"])
+        await bet._cavar(_InterFake(1), primeira, seguro)
+        # a grade do clique e a atual agora; a primeira expira e nao mexe em nada.
+        assert bet._VIEW_ATUAL[1] is not primeira
+        await primeira.on_timeout()
+        assert banco.buscar_mines(1) is not None
+        assert banco.buscar_saldo(1)[0] == 900
+        # a atual expira: ai sim encerra e devolve.
+        await bet._VIEW_ATUAL[1].on_timeout()
+        assert banco.buscar_mines(1) is None
+        assert banco.buscar_saldo(1)[0] == 1000
+
+    asyncio.run(t())
+
+
+def test_mines_grade_de_jogo_antigo_e_recusada(banco):
+    """>mines novo reembolsa o velho; clicar na grade velha nao mexe no jogo novo."""
+    import asyncio
+
+    from cogs import bet
+
+    async def t():
+        banco.adicionar_diamantes(1, 1000)
+        velha = await bet._comecar_mines(1, "dima", 100)
+        nova = await bet._comecar_mines(1, "dima", 100)
+        assert velha.bet_id != nova.bet_id
+        clique = _InterFake(1)
+        await bet._cavar(clique, velha, 0)
+        assert banco.buscar_mines(1)["abertos"] == set()
+        assert any("acabou" in str(a) for a, _ in clique.follows)
 
     asyncio.run(t())

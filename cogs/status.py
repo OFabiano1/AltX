@@ -8,7 +8,7 @@ from discord.ext import commands, tasks
 # ─── rotacao ───
 
 STATUSES = [
-    ("custom",     "✦ axolotlbr.xyz :)"),
+    ("custom",     "✦ discord.gg/AxolotlBR :)"),
     ("custom",     "✦ powered by Axolotl BR :D"),
     ("custom",     "alt está pensando... :o"),
     ("custom",     "// axolotl o/"),
@@ -22,7 +22,8 @@ STATUSES = [
     ("custom",     "✦ use >player :)"),
     ("custom",     "✦ use >bet 🎰"),
     ("jogando",    "Deadlock"),
-    ("jogando",    "AxolotlSMP.enxada.host"),
+    # o smp ainda nao abriu: ip so entra quando existir (site.ts do AxolotlBR).
+    ("custom",     "✦ axolotl smp em construção :o"),
 ]
 
 INTERVALO = 30  # segundos

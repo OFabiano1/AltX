@@ -1,7 +1,7 @@
 import asyncio
 import os
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import discord
 from discord import app_commands
@@ -9,6 +9,15 @@ from discord.ext import commands
 
 import visual
 import data
+
+# utc-3 fixo, igual o resto do bot: o daily vira a meia-noite de brasilia.
+TZ = timezone(timedelta(hours=-3))
+
+
+def hoje_daily() -> str:
+    """dia do daily (utc-3). antes era utc e o daily virava as 21h."""
+    return datetime.now(TZ).date().isoformat()
+
 
 # ─── ganhos ───
 DAILY_DIAMANTES = 100
@@ -145,6 +154,19 @@ async def _bonus_caixa(user_id: int, rara: bool) -> list[str]:
             await asyncio.to_thread(data.dar_buff, user_id, "xp2", CAIXA_BUFF_SEG)
             linhas.append("bonus: **2x xp** por 30min!")
     return linhas
+
+
+async def _cortar_com_backup() -> str:
+    """corta os diamantes de todo mundo, mas so depois de um backup que passou.
+    o aviso "rode >backup antes" era so texto: ninguem era obrigado."""
+    arq = await asyncio.to_thread(data.backup, 7)
+    if arq is None or not await asyncio.to_thread(data.verificar_backup, arq):
+        return "o backup falhou, não cortei nada. confere o `>backup` antes."
+    afetados, antes, depois = await asyncio.to_thread(data.cortar_diamantes)
+    return (
+        f"✂️ {visual.DIAMANTE} **{afetados}** saldos cortados pela metade: "
+        f"**{antes}** → **{depois}** no total. backup antes: `{arq.name}`."
+    )
 
 
 def _texto_buffs(buffs: dict) -> str:
@@ -313,7 +335,8 @@ def _secoes_loja(
             "Auras",
             _embed_loja_secao(
                 "Auras",
-                "poder passivo pro teu perfil.\n\n" + "\n\n".join(linhas_auras),
+                "visual pro teu perfil: aparece no saldo e no player.\n\n"
+                + "\n\n".join(linhas_auras),
                 saldo,
                 f"{barra}buy <id> compra aura • {barra}equipar <id>",
             ),
@@ -423,24 +446,26 @@ class Economia(commands.Cog, name="Economia"):
         await ctx.send(embed=_embed_saldo(membro, dima, amet, aura, total, buffs))
 
     @app_commands.command(name="saldo", description="veja seus diamantes, ametista, aura e coleção.")
-    async def saldo_slash(self, interaction: discord.Interaction):
+    @app_commands.describe(membro="ver o saldo de outro membro (opcional)")
+    async def saldo_slash(
+        self, interaction: discord.Interaction, membro: discord.Member | None = None
+    ):
+        membro = membro or interaction.user
         # leituras independentes, roda junto.
         (dima, amet, aura), colecao, buffs = await asyncio.gather(
-            asyncio.to_thread(data.buscar_saldo, interaction.user.id),
-            asyncio.to_thread(data.buscar_colecao, interaction.user.id),
-            asyncio.to_thread(data.buffs_ativos, interaction.user.id),
+            asyncio.to_thread(data.buscar_saldo, membro.id),
+            asyncio.to_thread(data.buscar_colecao, membro.id),
+            asyncio.to_thread(data.buffs_ativos, membro.id),
         )
         total = sum(q for _, q in colecao)
-        membro = interaction.user
         await interaction.response.send_message(
             embed=_embed_saldo(membro, dima, amet, aura, total, buffs)
         )
 
     # ─── >daily / /daily ───
     async def _daily(self, user_id: int) -> tuple[bool, int, int]:
-        hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         return await asyncio.to_thread(
-            data.tentar_daily, user_id, DAILY_DIAMANTES, DAILY_AMETISTA, hoje
+            data.tentar_daily, user_id, DAILY_DIAMANTES, DAILY_AMETISTA, hoje_daily()
         )
 
     @commands.command(name="daily")
@@ -522,23 +547,16 @@ class Economia(commands.Cog, name="Economia"):
     @commands.command(name="halvdima")
     @commands.has_permissions(administrator=True)
     async def halvdima(self, ctx: commands.Context):
-        """[admin] divide os diamantes de todo mundo por 2. rode `>backup` antes!"""
-        afetados, antes, depois = await asyncio.to_thread(data.cortar_diamantes)
-        await ctx.send(
-            f"✂️ {visual.DIAMANTE} **{afetados}** saldos cortados pela metade: "
-            f"**{antes}** → **{depois}** no total."
-        )
+        """[admin] divide os diamantes de todo mundo por 2 (tira backup antes)."""
+        await ctx.send(await _cortar_com_backup())
 
     # ─── /halvdima ───
     @app_commands.command(name="halvdima", description="[admin] divide os diamantes de todo mundo por 2.")
     @app_commands.checks.has_permissions(administrator=True)
     async def halvdima_slash(self, interaction: discord.Interaction):
         """versão slash do >halvdima."""
-        afetados, antes, depois = await asyncio.to_thread(data.cortar_diamantes)
-        await interaction.response.send_message(
-            f"✂️ {visual.DIAMANTE} **{afetados}** saldos cortados pela metade: "
-            f"**{antes}** → **{depois}** no total."
-        )
+        await interaction.response.defer()
+        await interaction.followup.send(await _cortar_com_backup())
 
     # ─── >loja ───
     @commands.command(name="loja")

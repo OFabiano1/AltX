@@ -185,7 +185,8 @@ class Diarias(commands.Cog, name="Diárias"):
     # ─── conta msg ───
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if message.author.bot:
+        # dm com o bot nao conta: a quest e mandar msg no servidor.
+        if message.author.bot or message.guild is None:
             return
         dia = hoje_str()
         total = await asyncio.to_thread(
@@ -198,7 +199,8 @@ class Diarias(commands.Cog, name="Diárias"):
                 await asyncio.to_thread(data.ganhar_xp, message.author.id, 20)
                 try:
                     await message.channel.send(
-                        f"{visual.AXOLOTL} quest completa: **manda 10 mensagens** +20xp!"
+                        f"{visual.AXOLOTL} {message.author.mention} fechou a quest "
+                        "**manda 10 mensagens**! +20xp"
                     )
                 except Exception:
                     pass

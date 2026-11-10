@@ -190,6 +190,8 @@ class Voz(commands.Cog, name="Voz"):
                     ephemeral=True,
                 )
                 return
+            # conectar leva ate 30s e o discord so espera 3s: confirma antes.
+            await interaction.response.defer()
             vc = interaction.guild.voice_client
             if vc is not None and not vc.is_connected():
                 await _desconectar(vc, "/call")
@@ -201,19 +203,13 @@ class Voz(commands.Cog, name="Voz"):
                     await asyncio.wait_for(canal.connect(), timeout=TIMEOUT_ENTRAR)
             except asyncio.TimeoutError:
                 log.warning("/call: voz demorou demais")
-                texto = (
+                await interaction.followup.send(
                     "a voz tá demorando pra responder (rede do host tá lenta). "
-                    "tenta de novo em uns segundos!"
+                    "tenta de novo em uns segundos!",
+                    ephemeral=True,
                 )
-                try:
-                    if interaction.response.is_done():
-                        await interaction.followup.send(texto, ephemeral=True)
-                    else:
-                        await interaction.response.send_message(texto, ephemeral=True)
-                except discord.DiscordException:
-                    pass
                 return
-            await interaction.response.send_message(f"tô na call **{canal.name}**!")
+            await interaction.followup.send(f"tô na call **{canal.name}**!")
         except Exception as erro:
             log.exception("falha ao entrar na call (slash)")
             texto = f"não consegui entrar na call: `{type(erro).__name__}`"
@@ -244,8 +240,10 @@ class Voz(commands.Cog, name="Voz"):
         if vc is None:
             await interaction.response.send_message("não estou em call", ephemeral=True)
             return
+        # o disconnect pode levar ate 8s: confirma antes dos 3s do discord.
+        await interaction.response.defer()
         await _desconectar(vc, "/sair")
-        await interaction.response.send_message("saí da call!")
+        await interaction.followup.send("saí da call!")
 
     # ─── >oi ───
     @commands.command(name="oi")

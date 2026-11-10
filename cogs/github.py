@@ -132,6 +132,17 @@ async def _detalhes_push(repo: str, before: str, head: str) -> list[dict]:
     ]
 
 
+# so a branch principal vai pro chat: push de branch de trabalho + o mesmo
+# commit na main postava duas vezes. o evento do poll nao diz qual e a
+# principal, entao vale main/master; o webhook manda a default_branch.
+RAMOS_PRINCIPAIS = {"main", "master"}
+
+
+def _ramo_principal(ref: str, padrao: str | None = None) -> bool:
+    ramo = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ""
+    return ramo == padrao if padrao else ramo in RAMOS_PRINCIPAIS
+
+
 def _idade_horas(iso: str) -> float | None:
     try:
         quando = datetime.datetime.fromisoformat(iso.replace("Z", "+00:00"))
@@ -153,7 +164,9 @@ async def _pushes_novos() -> list[tuple[dict, str | None]]:
     pushes = [
         e
         for e in eventos
-        if e.get("type") == "PushEvent" and not e.get("payload", {}).get("deleted")
+        if e.get("type") == "PushEvent"
+        and not e.get("payload", {}).get("deleted")
+        and _ramo_principal(e.get("payload", {}).get("ref", ""))
     ]
     if not pushes:
         return []
@@ -262,6 +275,10 @@ async def _receber_push(bot, payload: dict, delivery: str):
         return
     if payload.get("deleted"):
         log.info("github: push de delete em %s ignorado", repo)
+        return
+    padrao = (payload.get("repository") or {}).get("default_branch")
+    if not _ramo_principal(payload.get("ref", ""), padrao):
+        log.info("github: push fora da branch principal em %s ignorado", repo)
         return
     chave = f"wh:{delivery}"
     if await asyncio.to_thread(data.viu_evento, chave):

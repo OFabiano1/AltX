@@ -271,7 +271,7 @@ def _minas_por_valor(valor: int) -> int:
             return minas
     return 3
 
-JOGO_EXPIRADO = "jogo acabou! restart devolve a aposta."
+JOGO_EXPIRADO = "esse jogo já acabou! começa outro com `>mines`."
 
 
 # 1 trava por pessoa: duplo clique no mesmo jogo processa em fila, nunca junto.
@@ -381,29 +381,57 @@ async def _comecar_mines_nucleo(user_id: int, moeda: str, valor: int):
     await asyncio.to_thread(
         data.salvar_mines, user_id, moeda, valor, set(random.sample(range(MINAS_TOTAL), minas)), bet_id
     )
-    view = MinesView(user_id)
-    view.bet_id = bet_id
-    return view
+    return MinesView(user_id, bet_id)
 
 
-async def _cavar(interaction: discord.Interaction, dono_id: int, idx: int):
+# cada clique troca a msg por uma MinesView nova, mas a velha segue viva e
+# o timeout dela (5min) encerrava o jogo no meio. so a view atual de cada
+# pessoa pode encerrar por tempo.
+_VIEW_ATUAL: dict[int, "MinesView"] = {}
+
+
+async def _dono_e_defer(interaction: discord.Interaction, view: "MinesView") -> bool:
+    """fora da trava: nega quem nao e dono e confirma o clique na hora."""
     # dono eh checagem gratis: nega na hora, sem defer.
-    if interaction.user.id != dono_id:
+    if interaction.user.id != view.dono_id:
         await interaction.response.send_message(
             "esse jogo não é seu!", ephemeral=True
         )
-        return
+        return False
     # defer primeiro: confirma em ms e ganha 15min. sem isso, pico de
     # gente estoura os 3s e o clique "falha" mesmo funcionando.
     try:
         await interaction.response.defer()
     except Exception:
+        return False
+    return True
+
+
+async def _jogo_da_view(interaction: discord.Interaction, view: "MinesView") -> bool:
+    """dentro da trava: o jogo salvo ainda e o desta view (mesmo bet_id)?"""
+    jogo = await asyncio.to_thread(data.buscar_mines, view.dono_id)
+    if jogo is not None and (view.bet_id is None or jogo.get("bet_id") == view.bet_id):
+        return True
+    # botao de um jogo que ja acabou (ou de antes de um >mines novo).
+    try:
+        await interaction.edit_original_response(view=None)
+        await interaction.followup.send(JOGO_EXPIRADO, ephemeral=True)
+    except Exception:
+        pass
+    return False
+
+
+async def _cavar(interaction: discord.Interaction, view: "MinesView", idx: int):
+    if not await _dono_e_defer(interaction, view):
         return
-    async with _trava_mines(dono_id):
-        await _cavar_nucleo(interaction, dono_id, idx)
+    async with _trava_mines(view.dono_id):
+        if await _jogo_da_view(interaction, view):
+            await _cavar_nucleo(interaction, view.dono_id, idx, view.bet_id)
 
 
-async def _cavar_nucleo(interaction: discord.Interaction, dono_id: int, idx: int):
+async def _cavar_nucleo(
+    interaction: discord.Interaction, dono_id: int, idx: int, bet_id: int | None
+):
     """corpo do _cavar (ja com defer, trava segurada). 1 ida ao banco."""
     edit = interaction.edit_original_response
 
@@ -428,7 +456,8 @@ async def _cavar_nucleo(interaction: discord.Interaction, dono_id: int, idx: int
         # 💎 aberto = retirar.
         await _sacar_nucleo(dono_id, interaction)
         return
-    view = MinesView(dono_id)
+    view = MinesView(dono_id, bet_id)
+    view.message = interaction.message
     if idx in jogo["minas"]:
         # bomba: mostra tudo e depois some so os botoes, o embed fica.
         await asyncio.to_thread(data.registrar_aposta, dono_id, False)
@@ -502,11 +531,14 @@ async def _sacar_nucleo(dono_id: int, interaction: discord.Interaction, auto: bo
 class MinesView(discord.ui.View):
     """grid 20 pedras + retirar. so o dono clica. expira em 5min."""
 
-    def __init__(self, dono_id: int):
+    def __init__(self, dono_id: int, bet_id: int | None = None):
         super().__init__(timeout=300)
         self.dono_id = dono_id
+        # jogo desta grade: clique de grade de jogo velho e recusado.
+        self.bet_id = bet_id
         # msg com os botoes (anexada por quem cria): no timeout os botoes somem.
         self.message = None
+        _VIEW_ATUAL[dono_id] = self
         for i in range(MINAS_TOTAL):
             b = discord.ui.Button(
                 label="⬜",
@@ -537,46 +569,44 @@ class MinesView(discord.ui.View):
 
     def _fabrica(self, idx: int):
         async def cavar(interaction: discord.Interaction):
-            await _cavar(interaction, self.dono_id, idx)
+            await _cavar(interaction, self, idx)
 
         return cavar
 
     async def _sacar(self, interaction: discord.Interaction):
-        if interaction.user.id != self.dono_id:
-            await interaction.response.send_message(
-                "esse jogo não é seu!", ephemeral=True
-            )
-            return
-        try:
-            await interaction.response.defer()
-        except Exception:
+        if not await _dono_e_defer(interaction, self):
             return
         async with _trava_mines(self.dono_id):
-            await _sacar_nucleo(self.dono_id, interaction)
+            if await _jogo_da_view(interaction, self):
+                await _sacar_nucleo(self.dono_id, interaction)
 
     async def _aleatorio(self, interaction: discord.Interaction):
-        if interaction.user.id != self.dono_id:
-            await interaction.response.send_message(
-                "esse jogo não é seu!", ephemeral=True
+        if not await _dono_e_defer(interaction, self):
+            return
+        async with _trava_mines(self.dono_id):
+            if not await _jogo_da_view(interaction, self):
+                return
+            jogo = await asyncio.to_thread(data.buscar_mines, self.dono_id)
+            disponiveis = [i for i in range(MINAS_TOTAL) if i not in jogo["abertos"]]
+            if not disponiveis:
+                await interaction.followup.send("não tem pedra livre!", ephemeral=True)
+                return
+            await _cavar_nucleo(
+                interaction, self.dono_id, random.choice(disponiveis), self.bet_id
             )
-            return
-        jogo = await asyncio.to_thread(data.buscar_mines, self.dono_id)
-        if jogo is None:
-            await interaction.response.send_message(JOGO_EXPIRADO, ephemeral=True)
-            return
-        disponiveis = [i for i in range(MINAS_TOTAL) if i not in jogo["abertos"]]
-        if not disponiveis:
-            await interaction.response.send_message("não tem pedra livre!", ephemeral=True)
-            return
-        idx = random.choice(disponiveis)
-        await _cavar(interaction, self.dono_id, idx)
 
     async def on_timeout(self):
         # 5min parado: devolve a aposta e tira os botoes (sem botao, sem erro).
-        jogo = await asyncio.to_thread(data.remover_mines, self.dono_id)
-        if jogo is not None:
-            await _reembolsar(self.dono_id, jogo)
-            log.info("mines: reembolso por timeout pra %d", self.dono_id)
+        # so a view atual encerra, e so o jogo dela (mesmo bet_id).
+        if _VIEW_ATUAL.get(self.dono_id) is not self:
+            return
+        _VIEW_ATUAL.pop(self.dono_id, None)
+        async with _trava_mines(self.dono_id):
+            jogo = await asyncio.to_thread(data.buscar_mines, self.dono_id)
+            if jogo is not None and (self.bet_id is None or jogo.get("bet_id") == self.bet_id):
+                await asyncio.to_thread(data.remover_mines, self.dono_id)
+                await _reembolsar(self.dono_id, jogo)
+                log.info("mines: reembolso por timeout pra %d", self.dono_id)
         if self.message is not None:
             try:
                 await self.message.edit(view=None)
@@ -589,10 +619,15 @@ class Bet(commands.Cog, name="Axolotl Bet"):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._reembolso_feito = False
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # restart no meio do jogo: devolve as apostas presas.
+        # restart no meio do jogo: devolve as apostas presas. so no boot:
+        # on_ready volta a cada reconexao e encerrava jogo de quem tava jogando.
+        if self._reembolso_feito:
+            return
+        self._reembolso_feito = True
         try:
             pendentes = await asyncio.to_thread(data.listar_mines)
         except Exception:

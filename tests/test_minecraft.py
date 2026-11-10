@@ -42,6 +42,22 @@ def test_skin_slim_sem_capa_e_perfil_sem_textura():
     assert vazio == {"skin_url": None, "modelo": "classico", "capa_url": None}
 
 
+def test_embeds_sem_ordem_solta_no_rodape():
+    # o rodape do >minecraft dizia ">skin fulano mostra a skin inteira": tirado.
+    p = {
+        "nome": "jeb_",
+        "uuid": "853c80ef3c3749fdaa49938b674adae6",
+        "skin_url": "https://textures.minecraft.net/texture/abc",
+        "modelo": "classico",
+        "capa_url": None,
+    }
+    perfil = mc._embed_perfil(p)
+    skin = mc._embed_skin(p)
+    assert perfil.footer.text == skin.footer.text == mc.visual.FOOTER
+    assert "baixar a skin" in skin.description and "capa" not in skin.description
+    assert skin.image.url.endswith("?overlay&scale=10")
+
+
 def test_uuid_com_hifen():
     assert (
         mc.uuid_com_hifen("853c80ef3c3749fdaa49938b674adae6")

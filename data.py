@@ -414,7 +414,7 @@ def transferir_diamantes(origem: int, destino: int, qtd: int) -> tuple[bool, int
 def tentar_daily(user_id: int, dima: int, amet: int, hoje: str) -> tuple[bool, int, int]:
     """tenta resgatar o daily. Retorna (ok, diamantes, ametista).
 
-    `hoje` é YYYY-MM-DD em UTC. Se last_daily == hoje, nega.
+    `hoje` é YYYY-MM-DD em utc-3 (cogs.economia.hoje_daily). Se last_daily == hoje, nega.
     """
     with _lock, _conectar() as conn:
         conn.execute("BEGIN IMMEDIATE")

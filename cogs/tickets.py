@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -58,10 +59,6 @@ def _tem_permissao_fechamento(canal, autor, cargo_mod) -> bool:
     return False
 
 
-def _ids_configurados() -> bool:
-    return bool(MOD_ROLE_ID and TICKET_CHANNEL_ID)
-
-
 async def criar_ticket(interaction: discord.Interaction, emoji: str, label: str):
     canal = interaction.channel
 
@@ -74,13 +71,8 @@ async def criar_ticket(interaction: discord.Interaction, emoji: str, label: str)
             )
             return
 
-    async for thread in canal.archived_threads(private=True):
-        if str(interaction.user.id) in thread.name and not thread.archived:
-            await interaction.response.send_message(
-                ephemeral=True,
-                content="você já tem um atendimento em andamento!",
-            )
-            return
+    # criar thread + adicionar mods passa fácil dos 3s do discord: confirma antes.
+    await interaction.response.defer(ephemeral=True, thinking=True)
 
     # reaproveita um ticket arquivado do mesmo usuário em vez de abrir outro.
     ticket = None
@@ -91,23 +83,21 @@ async def criar_ticket(interaction: discord.Interaction, emoji: str, label: str)
 
     nome_thread = f"{emoji} | {interaction.user.name} - {interaction.user.id}"
 
+    # salvar_ticket_dono e sincrona: o `await` nela quebrava todo ticket
+    # depois de criar a thread (dono fora da thread privada, sem resposta).
     if ticket is not None:
         await ticket.edit(archived=False, locked=False)
         await ticket.edit(name=nome_thread, auto_archive_duration=AUTO_ARCHIVE, invitable=False)
-        await data.salvar_ticket_dono(ticket.id, interaction.user.id)
-        # reabriu: garante o dono dentro (pode ter saido da thread).
-        await ticket.add_user(interaction.user)
     else:
         ticket = await canal.create_thread(
-
             name=nome_thread,
             type=discord.ChannelType.private_thread,
             auto_archive_duration=AUTO_ARCHIVE,
             invitable=False,
         )
-        await data.salvar_ticket_dono(ticket.id, interaction.user.id)
-        # thread privada nao inclui o dono sozinha: sem isso ele nao ve o ticket.
-        await ticket.add_user(interaction.user)
+    await asyncio.to_thread(data.salvar_ticket_dono, ticket.id, interaction.user.id)
+    # thread privada nao inclui o dono sozinha: sem isso ele nao ve o ticket.
+    await ticket.add_user(interaction.user)
 
     if MOD_ROLE_ID:
         cargo_mod = interaction.guild.get_role(MOD_ROLE_ID)
@@ -115,9 +105,8 @@ async def criar_ticket(interaction: discord.Interaction, emoji: str, label: str)
             for membro in cargo_mod.members:
                 await ticket.add_user(membro)
 
-    await interaction.response.send_message(
-        ephemeral=True,
-        content=f"criei um ticket para você! {ticket.mention}",
+    await interaction.followup.send(
+        f"criei um ticket para você! {ticket.mention}", ephemeral=True
     )
 
     embed = discord.Embed(
@@ -170,11 +159,10 @@ class Tickets(commands.Cog, name="tickets"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         bot.add_view(DropdownView())
-        if not _ids_configurados():
-            log.warning(
-                "MOD_ROLE_ID / TICKET_CHANNEL_ID nao definidos — "
-                ">setupticket e o preenchimento automatico de moderadores ficam inativos"
-            )
+        if not TICKET_CHANNEL_ID:
+            log.warning("TICKET_CHANNEL_ID nao definido — >setupticket fica inativo")
+        if not MOD_ROLE_ID:
+            log.warning("MOD_ROLE_ID nao definido — moderadores nao entram sozinhos no ticket")
 
     # ─── >setupticket ───
     @commands.command(name="setupticket")

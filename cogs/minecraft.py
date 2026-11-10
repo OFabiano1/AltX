@@ -114,18 +114,23 @@ def _embed_perfil(p: dict) -> discord.Embed:
         color=visual.PRIMARY,
     )
     embed.set_thumbnail(url=f"{CRAFATAR}/avatars/{p['uuid']}?size=128&overlay")
-    embed.set_footer(text=f">skin {p['nome']} mostra a skin inteira • {visual.FOOTER}")
+    embed.set_footer(text=visual.FOOTER)
     return embed
 
 
 def _embed_skin(p: dict) -> discord.Embed:
+    links = []
     if p["skin_url"]:
-        texto = f"[baixar a skin]({p['skin_url']})"
-    else:
-        texto = "usa a skin padrão do minecraft."
+        links.append(f"[baixar a skin]({p['skin_url']})")
     if p["capa_url"]:
-        texto += f" · [capa]({p['capa_url']})"
-    embed = discord.Embed(title=f"skin de {p['nome']}", description=texto, color=visual.PRIMARY)
+        links.append(f"[baixar a capa]({p['capa_url']})")
+    embed = discord.Embed(
+        title=f"skin de {p['nome']}",
+        url=f"https://namemc.com/profile/{p['uuid']}",
+        description=" · ".join(links) or "usa a skin padrão do minecraft.",
+        color=visual.PRIMARY,
+    )
+    embed.set_thumbnail(url=f"{CRAFATAR}/avatars/{p['uuid']}?size=128&overlay")
     embed.set_image(url=f"{CRAFATAR}/renders/body/{p['uuid']}?overlay&scale=10")
     embed.set_footer(text=visual.FOOTER)
     return embed

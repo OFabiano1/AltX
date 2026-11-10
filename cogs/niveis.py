@@ -70,7 +70,7 @@ class Niveis(commands.Cog, name="Níveis"):
         progresso = BARRA_CHEIA * celulas + BARRA_VAZIA * (BARRA_CELULAS - celulas)
 
         embed = discord.Embed(
-            title=f"Rank de {membro.display_name}",
+            title=f"nível de {membro.display_name}",
             color=visual.PRIMARY,
         )
         embed.add_field(name="Nível", value=str(nivel), inline=True)
@@ -131,7 +131,7 @@ class Niveis(commands.Cog, name="Níveis"):
         progresso = BARRA_CHEIA * celulas + BARRA_VAZIA * (BARRA_CELULAS - celulas)
 
         embed = discord.Embed(
-            title=f"Rank de {membro.display_name}",
+            title=f"nível de {membro.display_name}",
             color=visual.PRIMARY,
         )
         embed.add_field(name="Nível", value=str(nivel), inline=True)

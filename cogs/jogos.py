@@ -59,6 +59,11 @@ MEDALHAS = ["1.", "2.", "3.", "4.", "5."]
 # recompensa em diamantes por resultado do ptp.
 PTP_DIAMANTES = {"vitoria": 20, "empate": 5, "derrota": 0}
 
+# ptp paga e nao custa nada: sem espera, repetir o comando era farm infinito.
+PTP_COOLDOWN = 10  # segundos por pessoa
+
+ESCOLHA_INVALIDA = "escolha inválida! é pedra, tesoura ou papel."
+
 
 def _jogada(usuario: int, escolha: str, jogada_bot: str) -> str:
     """traduz as duas escolhas no resultado do jogador."""
@@ -71,6 +76,9 @@ class Jogos(commands.Cog, name="jogos"):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._cooldown_ptp = commands.CooldownMapping.from_cooldown(
+            1, PTP_COOLDOWN, commands.BucketType.user
+        )
 
     # ─── lógica interna ───
     def _resolver(self, escolha: str | None, jogador) -> discord.Embed | None:
@@ -111,7 +119,7 @@ class Jogos(commands.Cog, name="jogos"):
             inline=False,
         )
         extra = f"  •  +{recompensa} {visual.DIAMANTE}" if recompensa else ""
-        embed.set_footer(text=f"seu placar: {v}V {d}D {e}E{extra}  •  use >placar • {visual.FOOTER}")
+        embed.set_footer(text=f"seu placar: {v}V {d}D {e}E{extra}  •  {visual.FOOTER}")
         return embed
 
     @staticmethod
@@ -157,9 +165,14 @@ class Jogos(commands.Cog, name="jogos"):
         dados = self._resolver(escolha, ctx.author)
         if dados is None:
             await ctx.send(
-                f"{visual.AXOLOTL} escolha inválida seu baitola! "
-                f"Use: `>ptp pedra`, `>ptp tesoura` ou `>ptp papel`"
+                f"{visual.AXOLOTL} {ESCOLHA_INVALIDA} "
+                f"ex: `>ptp pedra`, `>ptp tesoura` ou `>ptp papel`."
             )
+            return
+        # cooldown so na jogada valida: hub e erro de digitacao nao gastam.
+        espera = self._cooldown_ptp.get_bucket(ctx.message).update_rate_limit()
+        if espera:
+            await ctx.send(f"calma! tenta de novo em **{espera:.0f}s**.")
             return
 
         placar = await asyncio.to_thread(
@@ -180,11 +193,12 @@ class Jogos(commands.Cog, name="jogos"):
         app_commands.Choice(name="tesoura", value="tesoura"),
         app_commands.Choice(name="papel", value="papel"),
     ])
+    @app_commands.checks.cooldown(1, PTP_COOLDOWN, key=lambda i: i.user.id)
     async def ptp_slash(self, interaction: discord.Interaction, escolha: str):
         dados = self._resolver(escolha, interaction.user)
         if dados is None:
             await interaction.response.send_message(
-                f"{visual.AXOLOTL} escolha inválida seu baitola!",
+                f"{visual.AXOLOTL} {ESCOLHA_INVALIDA}",
                 ephemeral=True,
             )
             return

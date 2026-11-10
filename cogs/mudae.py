@@ -104,6 +104,8 @@ class Mudae(commands.Cog, name="Mudae"):
         self.timers: dict[int, asyncio.Task] = {}
         # user_id -> (channel_id, timestamp)
         self.pendentes: dict[int, tuple[int, float]] = {}
+        # referencia forte: task solta pode ser coletada no meio do sleep.
+        self._fallbacks: set[asyncio.Task] = set()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -114,7 +116,13 @@ class Mudae(commands.Cog, name="Mudae"):
             log.exception("falha ao carregar reminders do Mudae")
             return
         agora = time.time()
+        reagendados = 0
         for user_id, channel_id, guild_id, expires_at in todos:
+            # on_ready volta a cada reconexao: timer vivo nao ganha gemeo
+            # (antes a pessoa era marcada duas vezes).
+            vivo = self.timers.get(user_id)
+            if vivo is not None and not vivo.done():
+                continue
             delay = expires_at - agora
             if delay <= 0:
                 await asyncio.to_thread(data.remover_mudae, user_id)
@@ -122,8 +130,9 @@ class Mudae(commands.Cog, name="Mudae"):
             self.timers[user_id] = asyncio.create_task(
                 self._dormir_e_avisar(user_id, channel_id, delay / 60)
             )
-        if todos:
-            log.info("mudae: %d reminder(s) reagendado(s)", len(todos))
+            reagendados += 1
+        if reagendados:
+            log.info("mudae: %d reminder(s) reagendado(s)", reagendados)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -134,9 +143,11 @@ class Mudae(commands.Cog, name="Mudae"):
         if not message.author.bot:
             if ROLL_RE.match((message.content or "").strip()):
                 self.pendentes[message.author.id] = (message.channel.id, time.time())
-                self.bot.loop.create_task(
+                task = asyncio.create_task(
                     self._fallback(message.author.id, message.channel.id, message.guild.id)
                 )
+                self._fallbacks.add(task)
+                task.add_done_callback(self._fallbacks.discard)
             return
 
         # 2. resposta do Mudae — extrai tempo e agenda.
@@ -150,6 +161,12 @@ class Mudae(commands.Cog, name="Mudae"):
             return
         rolls_left, minutos = parse_mudae(texto)
         if minutos is None:
+            # ainda tem roll: a pessoa sai dos pendentes, senao o fallback
+            # de 15s agendava o aviso padrao mesmo com roll sobrando.
+            if rolls_left:
+                dono = await self._achar_dono(message)
+                if dono is not None:
+                    self.pendentes.pop(dono, None)
             return
 
         dono = await self._achar_dono(message)
@@ -310,7 +327,7 @@ class Mudae(commands.Cog, name="Mudae"):
         )
 
     def cog_unload(self):
-        for t in self.timers.values():
+        for t in [*self.timers.values(), *self._fallbacks]:
             if not t.done():
                 t.cancel()
         self.timers.clear()
