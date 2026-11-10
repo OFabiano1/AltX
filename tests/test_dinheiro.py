@@ -94,6 +94,17 @@ def test_backup_e_restore(banco, tmp_path):
     assert len(sobraram) == 2 and "alt-20200101-0000.db" not in sobraram
 
 
+def test_backup_nao_deixa_shm_wal(banco):
+    # no deploy a pasta juntava -shm/-wal de backup apagado desde outubro.
+    banco.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    orfao = banco.BACKUP_DIR / "alt-20200101-0000.db-shm"
+    orfao.touch()
+    arq = banco.backup(keep=7)
+    assert banco.verificar_backup(arq) is True
+    assert not orfao.exists()
+    assert sorted(p.name for p in banco.BACKUP_DIR.iterdir()) == [arq.name]
+
+
 def test_snapshot_tem_tudo(banco):
     banco.ganhar_xp(1, 150)
     banco.adicionar_diamantes(1, 10)

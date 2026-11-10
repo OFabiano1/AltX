@@ -1243,6 +1243,9 @@ def backup(keep: int = 7):
             alvo = sqlite3.connect(destino)
             try:
                 origem.backup(alvo)
+                # a copia herda o wal do original e a verificacao deixava
+                # -shm/-wal do lado. em delete o backup e um arquivo so.
+                alvo.execute("PRAGMA journal_mode=DELETE")
             finally:
                 alvo.close()
         finally:
@@ -1250,6 +1253,10 @@ def backup(keep: int = 7):
     arquivos = sorted(BACKUP_DIR.glob("alt-*.db"), key=lambda p: p.name)
     for velho in arquivos[:-keep] if len(arquivos) > keep else []:
         velho.unlink(missing_ok=True)
+    # -shm/-wal sem o .db do lado: sobra de backup ja apagado.
+    for resto in BACKUP_DIR.glob("alt-*.db-*"):
+        if not resto.with_name(resto.name.rsplit("-", 1)[0]).exists():
+            resto.unlink(missing_ok=True)
     return destino
 
 
