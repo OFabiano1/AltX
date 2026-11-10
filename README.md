@@ -1,27 +1,50 @@
-# alt
+<p align="center">
+  <img src=".github/readme/banner.png" alt="alt — o bot oficial da axolotl br" width="100%">
+</p>
 
-o bot oficial da **axolotl br** — sua comunidade na internet. de player pra player.
+o bot oficial da **axolotl br**, a comunidade de player pra player. todo comando `>` tem
+um gêmeo `/` com o mesmo nome (aliases só no `>`). `>ajuda` mostra tudo por categoria.
 
-## o que ele faz
+## comandos
 
 | sistema | comandos |
 |---|---|
-| geral | `>axolotl` `>ping` `/ping` `>ajuda` + oi do dia (saudação 1x/dia por pessoa) |
-| voz | `>call` `>sair` `>oi` (oi automático por pessoa) |
-| servidor | `>server` (hub) `>player` (`>perfil` ainda vale) + push do github no chat |
-| níveis | `>xp` `>ranking` |
-| jogos | `>ptp` (sem arg = hub com placar + top 5) `>placar` `>rankingptp` |
-| economia | `>saldo` `>daily` (100 dima + 2 amet) `>pay` `>loja` (auras/caixas) `>buy` `>equipar` (`>aura` vale) `>auras` `>roll` (5 amet) `>colecao` (18 espécies) `>topdima` `>box` (150 dima, alias `>caixa`) `>caixarara` (15 amet) |
-| bet | `>bet` (hub) `>slots` `>caraoucoroa` `>mines` (1–1000; derrota some, vitória fica) |
-| osu! | `>osu` (`>osu mania` pros outros modos) |
-| mudae | auto-reminder `$m`/`$wa`/`$ha`... + `>mudae <min>` `>mudae_stop` |
-| tickets | `>setupticket` `>fecharticket` `>addticket` |
-| backup | `>backup` (admin; automático todo dia 04:00, retém 7) |
-| extras | responde `w`, status rotativo sem repetir, `>deadlock` `>vincular` `>stats` `>rank`, digest + `>quests` (diárias e streak) |
+| geral | `>ajuda` `>axolotl` `>ping` · responde `w` · oi do dia (1 por pessoa) |
+| servidor | `>server` (hub da comunidade) · `>player` (`>perfil` vale) · `>quests` (diárias e streak) |
+| níveis | `>xp` · `>ranking` |
+| economia | `>saldo` · `>daily` (100 diamantes + 2 ametista, vira à meia-noite) · `>pay` · `>topdima` |
+| loja | `>loja` · `>buy` · `>equipar` (`>aura` vale) · `>auras` · `>roll` (5 ametista) · `>box` (150 diamantes) · `>caixarara` (15 ametista) · `>colecao` |
+| axolotl bet | `>bet` (hub) · `>slots` · `>caraoucoroa` · `>mines` — aposta de 1 a 1000 em diamante ou ametista |
+| jogos | `>ptp` (sem nada abre o hub) · `>placar` · `>rankingptp` |
+| deadlock | `>deadlock` · `>vincular` · `>desvincular` · `>stats` (`1d` ou `7d`) · `>rank` |
+| minecraft | `>minecraft <nick>` (perfil) · `>skin <nick>` (skin inteira pra baixar) |
+| osu! | `>osu` (`>osu mania`, `taiko`, `catch`) |
+| mudae | aviso sozinho quando os rolls voltam · `>mudae <min>` · `>mudae_stop` |
+| voz | `>call` · `>sair` · `>oi` (toca o oi de quem entra na call) |
+| tickets | painel com denúncia, bug e outra · `>fecharticket` · `>addticket` |
 
-admin: `>restart`, `>setxp`, `>dar`, `>backup`, `>github`.
+admin: `>setxp` `>dar` `>halvdima` `>resetuser` `>backup` `>setupticket` `>github` `>restart`.
 
-todos os comandos `>` têm gêmeo `/` com o mesmo nome (aliases só no `>`).
+sozinho, sem comando: digest das diárias às 00:00, backup do banco às 04:00 (guarda 7),
+commit da branch principal dos repos no chat e status rotativo, com deadlock sempre na roda.
+
+## rodar
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env   # preenche o TOKEN no mínimo
+python main.py
+```
+
+no developer portal, liga os intents `members` e `message_content`. o resto das variáveis
+tá explicado no `.env.example`. testes: `python -m pytest`.
+
+## deploy
+
+a shardcloud puxa da `main` sozinha a cada push. o banco mora em `/app/data/alt.db` e
+não vai pro git. a versão do bot fica em `VERSAO` no `main.py` e aparece no log de boot.
 
 ---
 
