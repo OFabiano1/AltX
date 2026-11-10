@@ -67,6 +67,17 @@ async def _sumir(msg, segundos: int = 15):
         pass
 
 
+# o loop so guarda referencia fraca de task: sem isso o gc pode matar
+# o `_sumir` no meio do sleep e a msg de derrota fica pra sempre.
+_pendentes: set[asyncio.Task] = set()
+
+
+def _sumir_depois(msg) -> None:
+    task = asyncio.create_task(_sumir(msg))
+    _pendentes.add(task)
+    task.add_done_callback(_pendentes.discard)
+
+
 async def _premiar(user_id: int, moeda: str, ganho: int, apostado: int) -> None:
     """paga o premio e registra a aposta pros stats do >player."""
     await asyncio.to_thread(data.registrar_aposta, user_id, ganho > apostado)
@@ -204,7 +215,7 @@ class BetView(discord.ui.View):
         )
         # derrota some em 15s, vitoria fica no chat.
         if premio <= self.valor:
-            asyncio.create_task(_sumir(await interaction.original_response()))
+            _sumir_depois(await interaction.original_response())
 
 
 def _embed_bet(barra: str) -> discord.Embed:
@@ -644,7 +655,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         )
         # derrota some em 15s, vitoria fica no chat.
         if premio <= valor:
-            asyncio.create_task(_sumir(msg))
+            _sumir_depois(msg)
 
     @app_commands.command(name="slots", description="slots: trinca paga até 10x.")
     @app_commands.describe(moeda="qual moeda apostar", valor="quanto apostar (1-1000)")
@@ -680,7 +691,7 @@ class Bet(commands.Cog, name="Axolotl Bet"):
         )
         # derrota some em 15s, vitoria fica no chat.
         if premio <= valor:
-            asyncio.create_task(_sumir(await interaction.original_response()))
+            _sumir_depois(await interaction.original_response())
 
     # ─── >caraoucoroa ───
     @commands.command(name="caraoucoroa")

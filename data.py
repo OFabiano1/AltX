@@ -16,9 +16,13 @@ DB_PATH = Path(__file__).parent / "data" / "alt.db"
 LEGACY_XP = Path(__file__).parent / "data" / "xp.json"
 
 # so escrita pega lock. leitura vai sem: no modo wal leitores concorrentes
-# nao bloqueiam (cada chamada usa a propria conexao). BEGIN IMMEDIATE nas
+# nao bloqueiam (cada thread tem a propria conexao). BEGIN IMMEDIATE nas
 # escritas + timeout 30s cuidam da concorrencia entre elas.
 _lock = threading.Lock()
+
+# uma conexao por thread do pool, reaproveitada: abrir + 4 pragmas a cada
+# operacao jogava fora o cache de paginas toda hora.
+_local = threading.local()
 
 # coluna de placar para cada resultado. Mapeamento explícito em vez de
 # derivar a chave do primeiro caractere da string.
@@ -169,24 +173,36 @@ CREATE TABLE IF NOT EXISTS mines_jogos (
 """
 
 
-@contextmanager
-def _conectar():
+def _conexao_da_thread() -> sqlite3.Connection:
+    """conexao desta thread; reabre se o DB_PATH mudou (os testes trocam)."""
+    conn = getattr(_local, "conn", None)
+    if conn is not None and _local.path == DB_PATH:
+        return conn
+    if conn is not None:
+        conn.close()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
     # por-conexao (nao persistem): espera na trava, cache e temp em ram.
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA cache_size=-64000")
     conn.execute("PRAGMA temp_store=MEMORY")
     conn.execute("PRAGMA mmap_size=134217728")
+    _local.conn, _local.path = conn, DB_PATH
+    return conn
+
+
+@contextmanager
+def _conectar():
+    # a transacao sempre fecha aqui (commit ou rollback): a conexao volta
+    # limpa pra proxima operacao da thread.
+    conn = _conexao_da_thread()
     try:
-        conn.row_factory = sqlite3.Row
         yield conn
         conn.commit()
     except Exception:
         conn.rollback()
         raise
-    finally:
-        conn.close()
 
 
 # ─── níveis ───

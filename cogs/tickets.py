@@ -203,7 +203,7 @@ class Tickets(commands.Cog, name="tickets"):
         if TICKET_BANNER_URL:
             embed.set_image(url=TICKET_BANNER_URL)
         embed.set_footer(text=(
-            f"© 2020 – 2026 Axolotl BR. Todos os direitos reservados.\n\n"
+            "© 2020 – 2026 Axolotl BR. Todos os direitos reservados.\n\n"
             "Para dar início ao seu atendimento, selecione uma das opções abaixo."
         ))
 
@@ -268,7 +268,7 @@ class Tickets(commands.Cog, name="tickets"):
         if TICKET_BANNER_URL:
             embed.set_image(url=TICKET_BANNER_URL)
         embed.set_footer(text=(
-            f"© 2020 – 2026 Axolotl BR. Todos os direitos reservados.\n\n"
+            "© 2020 – 2026 Axolotl BR. Todos os direitos reservados.\n\n"
             "Para dar início ao seu atendimento, selecione uma das opções abaixo."
         ))
 
