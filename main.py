@@ -15,6 +15,11 @@ import data
 
 load_dotenv()
 
+# ─── versao ───
+
+# sobe a cada entrega, igual o commit (`0.1.x - o que mudou`).
+VERSAO = "0.1.0"
+
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
 
@@ -58,19 +63,58 @@ log = logging.getLogger("alt")
 bot = commands.Bot(command_prefix=">", intents=intents)
 
 
+# ─── slash sync ───
+
+
+def escolher_servidor(guild_id: str | None, servidores: list[int]) -> int | None:
+    """servidor pra sincronizar o slash: o GUILD_ID se o bot estiver nele,
+    senao o unico servidor do bot. varios e nenhum valido = global (None)."""
+    bruto = (guild_id or "").strip()
+    if bruto.isdigit() and int(bruto) in servidores:
+        return int(bruto)
+    if len(servidores) == 1:
+        return servidores[0]
+    return None
+
+
+_slash_sincronizado = False
+
+
+async def sincronizar_slash() -> None:
+    # on_ready roda de novo a cada reconexao: sync uma vez so por boot.
+    global _slash_sincronizado
+    if _slash_sincronizado:
+        return
+
+    ids = [g.id for g in bot.guilds]
+    alvo = escolher_servidor(GUILD_ID, ids)
+    if GUILD_ID and str(alvo) != GUILD_ID.strip():
+        # ja aconteceu: id do emoji :02: no lugar do servidor -> 403 no sync.
+        log.warning("GUILD_ID=%s nao e um servidor do bot (servidores: %s)", GUILD_ID, ids)
+
+    if alvo is None:
+        synced = await bot.tree.sync()
+        log.info("slash: %d comandos sincronizados globalmente (ate 1h)", len(synced))
+    else:
+        # comando do bot e global; sem copiar pro servidor o sync manda 0.
+        servidor = discord.Object(id=alvo)
+        bot.tree.copy_global_to(guild=servidor)
+        synced = await bot.tree.sync(guild=servidor)
+        # apaga o registro global antigo: senao cada comando aparece duas vezes
+        # (global velho + servidor). a arvore local continua com tudo.
+        await bot.http.bulk_upsert_global_commands(bot.application_id, payload=[])
+        log.info("slash: %d comandos no servidor %d (vale na hora)", len(synced), alvo)
+    _slash_sincronizado = True
+
+
 # bot está online
 @bot.event
 async def on_ready():
-    # sem GUILD_ID o sync é global e pode levar até uma hora para
-    # propagar. Apontando para o guild, vale em segundos.
-    if GUILD_ID:
-        guild = discord.Object(id=int(GUILD_ID))
-        synced = await bot.tree.sync(guild=guild)
-        log.info("slash commands sincronizados no guild: %d", len(synced))
-    else:
-        log.warning("GUILD_ID nao definido — sync global (pode demorar ate 1h)")
-        synced = await bot.tree.sync()
-        log.info("slash commands sincronizados globalmente: %d", len(synced))
+    try:
+        await sincronizar_slash()
+    except discord.HTTPException:
+        # sem slash o `>` continua: loga e segue em vez de matar o on_ready.
+        log.exception("slash: sync falhou")
 
     log.info("%s online — %s", bot.user, visual.FOOTER)
 
@@ -479,7 +523,8 @@ async def main():
         # esses numeros nao batem com o esperado. o pid entrega
         # instancia zumbi (dois processos com o mesmo token).
         log.info(
-            "boot pid=%d | comandos registrados: %d prefixo, %d slash",
+            "boot v%s pid=%d | comandos registrados: %d prefixo, %d slash",
+            VERSAO,
             os.getpid(),
             len(bot.commands),
             sum(1 for _ in bot.tree.walk_commands()),
