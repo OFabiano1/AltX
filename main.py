@@ -18,7 +18,7 @@ load_dotenv()
 # ─── versao ───
 
 # sobe a cada entrega, igual o commit (`3.0.x - o que mudou`).
-VERSAO = "3.0.0"
+VERSAO = "3.0.1"
 
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
@@ -37,6 +37,7 @@ COGS = (
     "cogs.github",
     "cogs.daily",
     "cogs.osu",
+    "cogs.minecraft",
     "cogs.bet",
     "cogs.backup",
 )
@@ -230,6 +231,7 @@ ORDEM_AJUDA = (
     "tickets",
     "Mudae",
     "osu!",
+    "Minecraft",
     "Backup",
     "Status",
 )
@@ -260,6 +262,7 @@ CATEGORIA_EMOJIS = {
     "Tickets": "🎟️",
     "Mudae": "🃏",
     "osu!": "🎵",
+    "Minecraft": "⛏️",
     "Backup": "💾",
 }
 

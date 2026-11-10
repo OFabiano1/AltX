@@ -111,6 +111,7 @@ CATEGORIAS = {
     "Axolotl Bet": "Axolotl Bet",
     "Mudae":     "Mudae",
     "osu!":      "osu!",
+    "Minecraft": "Minecraft",
     "Deadlock":  "Deadlock",
     "Servidor":  "Servidor",
 }
