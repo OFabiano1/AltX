@@ -206,6 +206,9 @@ def _conectar():
 
 
 # ─── níveis ───
+XP_MAX = 10**9
+
+
 def xp_para_proximo(nivel: int) -> int:
     return nivel * 100
 
@@ -256,7 +259,8 @@ def definir_xp(user_id: int, xp: int) -> tuple[int, int]:
     """
     with _lock, _conectar() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        xp = max(0, xp)
+        # teto: o laço abaixo roda com o lock global, valor absurdo travaria o bot todo
+        xp = max(0, min(xp, XP_MAX))
         nivel = 1
         while xp >= xp_para_proximo(nivel):
             xp -= xp_para_proximo(nivel)
@@ -464,6 +468,26 @@ def dar_aura(user_id: int, aura_id: str) -> None:
             "INSERT OR IGNORE INTO auras (user_id, aura_id) VALUES (?, ?)",
             (user_id, aura_id),
         )
+
+
+def comprar_aura(user_id: int, aura_id: str, preco: int) -> tuple[str, int]:
+    """checa, cobra e entrega numa transacao so: clique duplo nao cobra 2x.
+
+    retorna ("ok"|"tem"|"falta", saldo_de_ametista).
+    """
+    with _lock, _conectar() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT ametista FROM economia WHERE user_id = ?", (user_id,)).fetchone()
+        saldo = row["ametista"] if row else 0
+        if conn.execute(
+            "SELECT 1 FROM auras WHERE user_id = ? AND aura_id = ?", (user_id, aura_id)
+        ).fetchone():
+            return "tem", saldo
+        if saldo < preco:
+            return "falta", saldo
+        conn.execute("UPDATE economia SET ametista = ametista - ? WHERE user_id = ?", (preco, user_id))
+        conn.execute("INSERT INTO auras (user_id, aura_id) VALUES (?, ?)", (user_id, aura_id))
+        return "ok", saldo - preco
 
 
 def auras_usuario(user_id: int) -> list[str]:

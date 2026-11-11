@@ -584,19 +584,16 @@ class Economia(commands.Cog, name="Economia"):
                 + ", ".join(f"`{k}`" for k in AURAS)
             )
             return
-        if await asyncio.to_thread(data.tem_aura, ctx.author.id, aura_id):
+        preco = AURAS[aura_id]["preco"]
+        res, saldo = await asyncio.to_thread(data.comprar_aura, ctx.author.id, aura_id, preco)
+        if res == "tem":
             await ctx.send(f"{visual.AXOLOTL} você já tem essa aura! use `>equipar {aura_id}`.")
             return
-        preco = AURAS[aura_id]["preco"]
-        ok, saldo = await asyncio.to_thread(
-            data.debitar_moeda, ctx.author.id, "amet", preco
-        )
-        if not ok:
+        if res == "falta":
             await ctx.send(
                 f"{visual.AMETHYST} faltam **{preco - saldo}** ametista pra **{AURAS[aura_id]['nome']}**!"
             )
             return
-        await asyncio.to_thread(data.dar_aura, ctx.author.id, aura_id)
         await asyncio.to_thread(data.equipar_aura, ctx.author.id, aura_id)
         await ctx.send(
             f"{visual.AXOLOTL} {ctx.author.mention} comprou e equipou **{AURAS[aura_id]['nome']}**!"
@@ -934,23 +931,20 @@ class Economia(commands.Cog, name="Economia"):
     async def buy_slash(self, interaction: discord.Interaction, aura_id: str):
         """versão slash do >buy."""
         user_id = interaction.user.id
-        if await asyncio.to_thread(data.tem_aura, user_id, aura_id):
+        preco = AURAS[aura_id]["preco"]
+        res, saldo = await asyncio.to_thread(data.comprar_aura, user_id, aura_id, preco)
+        if res == "tem":
             await interaction.response.send_message(
                 f"{visual.AXOLOTL} você já tem essa aura! equipe com `/equipar`.",
                 ephemeral=True,
             )
             return
-        preco = AURAS[aura_id]["preco"]
-        ok, saldo = await asyncio.to_thread(
-            data.debitar_moeda, user_id, "amet", preco
-        )
-        if not ok:
+        if res == "falta":
             await interaction.response.send_message(
                 f"{visual.AMETHYST} faltam **{preco - saldo}** ametista pra **{AURAS[aura_id]['nome']}**!",
                 ephemeral=True,
             )
             return
-        await asyncio.to_thread(data.dar_aura, user_id, aura_id)
         await asyncio.to_thread(data.equipar_aura, user_id, aura_id)
         await interaction.response.send_message(
             f"{visual.AXOLOTL} você comprou e equipou **{AURAS[aura_id]['nome']}**!"

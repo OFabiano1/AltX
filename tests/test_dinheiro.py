@@ -21,6 +21,20 @@ def test_conquista_uma_vez(banco):
     assert banco.conquistas_de(3) == []
 
 
+def test_comprar_aura_cobra_uma_vez(banco):
+    banco.adicionar_ametista(1, 10)
+    assert banco.comprar_aura(1, "fogo", 4) == ("ok", 6)
+    assert banco.comprar_aura(1, "fogo", 4) == ("tem", 6)  # 2o clique nao cobra
+    assert banco.comprar_aura(1, "gelo", 99) == ("falta", 6)
+    assert banco.comprar_aura(2, "fogo", 1) == ("falta", 0)  # sem linha na economia
+    assert banco.auras_usuario(1) == ["fogo"]
+
+
+def test_setxp_absurdo_nao_trava(banco):
+    xp, nivel = banco.definir_xp(1, 10**18)
+    assert nivel < 10_000 and xp >= 0
+
+
 def test_transferir(banco):
     banco.adicionar_diamantes(1, 100)
     ok, s1, s2 = banco.transferir_diamantes(1, 2, 40)

@@ -12,7 +12,8 @@ import visual
 log = logging.getLogger("alt.tickets")
 
 # ─── configure aqui ou no .env ───
-MOD_ROLE_ID       = data.env_int("MOD_ROLE_ID", 0)
+# MODERATOR_ROLE_ID era o nome antigo no .env: aceita os dois pra nao ficar sem mod no ticket
+MOD_ROLE_ID       = data.env_int("MOD_ROLE_ID", 0) or data.env_int("MODERATOR_ROLE_ID", 0)
 TICKET_CHANNEL_ID = data.env_int("TICKET_CHANNEL_ID", 1148417761987534918)
 # banner do painel. padrao embutido, mas link de cdn expira:
 # quando cair, bota o link novo no env que ele prevalece.
