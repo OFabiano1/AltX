@@ -258,7 +258,13 @@ def _embed_bet(barra: str) -> discord.Embed:
 # ─── mines ───
 
 MINAS_TOTAL = 20  # 5x4 + retirar (limite do discord: 25 por msg).
-MINAS_MINIMO_SAQUE = 3  # pedras abertas pra poder retirar
+MINAS_MINIMO_SAQUE = 3  # pedras abertas pra poder retirar (piso)
+EDGE_MINES = 0.75  # fatia do multi justo que paga; o resto e da casa
+
+
+def _minimo_saque(minas: int) -> int:
+    """mais bomba, mais pedra pra sacar: 10x nao sai em 3 cliques."""
+    return max(MINAS_MINIMO_SAQUE, minas // 3 + 1)  # 8->3, 12->5, 15->6
 
 # quanto maior a aposta, mais mina (e mais multi).
 FAIXAS_MINA = ((600, 15), (300, 12), (150, 8), (50, 5), (1, 3))
@@ -300,12 +306,12 @@ PREMIO_MAX = 5000
 
 
 def _mult_mines(abertos: int, minas: int) -> float:
-    """multiplicador com ~20% pra banca, teto 10x (igual o slots)."""
+    """multiplicador com ~25% pra banca, teto 10x (igual o slots)."""
     if abertos <= 0:
         return 1.0
     if MINAS_TOTAL - abertos < minas:
         return MULT_MAX
-    mult = comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * 0.80
+    mult = comb(MINAS_TOTAL, minas) / comb(MINAS_TOTAL - abertos, minas) * EDGE_MINES
     return min(mult, MULT_MAX)
 
 
@@ -498,10 +504,11 @@ async def _sacar_nucleo(dono_id: int, interaction: discord.Interaction, auto: bo
             except Exception:
                 pass
             return
-        if len(jogo["abertos"]) < MINAS_MINIMO_SAQUE:
+        minimo = _minimo_saque(len(jogo["minas"]))
+        if len(jogo["abertos"]) < minimo:
             try:
                 await interaction.followup.send(
-                    f"abre ao menos **{MINAS_MINIMO_SAQUE}** pedras pra retirar!",
+                    f"abre ao menos **{minimo}** pedras pra retirar!",
                     ephemeral=True,
                 )
             except Exception:
