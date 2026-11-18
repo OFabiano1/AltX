@@ -18,7 +18,7 @@ load_dotenv()
 # ─── versao ───
 
 # sobe a cada entrega, igual o commit (`3.0.x - o que mudou`).
-VERSAO = "3.0.4"
+VERSAO = "3.0.6"
 
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")

@@ -8,7 +8,7 @@ from discord.ext import commands, tasks
 # ─── rotacao ───
 
 STATUSES = [
-    ("custom",     "✦ discord.gg/AxolotlBR :)"),
+    ("custom",     "✦ discord.gg/8WtmZTySdB :)"),
     ("custom",     "✦ powered by Axolotl BR :D"),
     ("custom",     "alt está pensando... :o"),
     ("custom",     "// axolotl o/"),
